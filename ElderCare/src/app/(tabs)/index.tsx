@@ -1,12 +1,16 @@
 import { useRouter } from "expo-router";
-import { Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../../constants/Theme";
-import { useAuthStore } from "../../store/auth";
+import { useAuth } from "../../store/auth";
 import { styles } from "./styles";
+
+export const options = {
+  headerShown: false,
+};
 
 export default function HomeScreen() {
   const router = useRouter();
-  const logout = useAuthStore((state) => state.logout);
+  const logout = useAuth().logout;
 
   const handleLogout = () => {
     logout();
@@ -14,7 +18,11 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <ScrollView
+      style={styles.screenWrapper}
+      contentContainerStyle={styles.screenContent}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.headerCard}>
         <View style={styles.headerCopy}>
           <Text style={styles.kicker}>ElderCare</Text>
@@ -95,6 +103,6 @@ export default function HomeScreen() {
           <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }

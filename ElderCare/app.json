@@ -11,6 +11,8 @@
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "googleServicesFile": "./google-services.local.json",
+      "package": "suceava.ElderCare",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -34,11 +36,21 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "expo-build-properties",
+      "@react-native-firebase/auth"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "959ab3cc-6a95-464f-81ec-d5ad37e38110"
+      }
+    },
+    "owner": "pitza"
   }
 }

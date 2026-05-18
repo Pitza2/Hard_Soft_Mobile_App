@@ -33,7 +33,7 @@ yarn-error.*
 # local env files
 .env*.local
 
-# typescript
+# typescriptdeep house mix
 *.tsbuildinfo
 
 app-example
@@ -41,3 +41,5 @@ app-example
 # generated native folders
 /ios
 /android
+
+google-services.local.json
