@@ -7,6 +7,7 @@ import {
   signOut,
 } from "@react-native-firebase/auth";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import registerForPushNotifications from "./push";
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -24,8 +25,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      if (u) {
+        await registerForPushNotifications(u.email!); // pass uid directly
+      }
       setLoading(false);
     });
     return () => unsubscribe();

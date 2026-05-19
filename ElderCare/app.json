@@ -8,7 +8,8 @@
     "scheme": "eldercare",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "suceava.ElderCare"
     },
     "android": {
       "googleServicesFile": "./google-services.local.json",
@@ -37,7 +38,6 @@
           }
         }
       ],
-      "@react-native-firebase/app",
       "expo-build-properties",
       "@react-native-firebase/auth"
     ],
@@ -46,7 +46,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
+      "router": "src/app",
       "eas": {
         "projectId": "959ab3cc-6a95-464f-81ec-d5ad37e38110"
       }

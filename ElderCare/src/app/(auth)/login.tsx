@@ -4,13 +4,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  StyleSheet,
   Text,
   TextInput,
-  View,
+  View
 } from "react-native";
-import { colors, font, radius, spacing } from "../../constants/Theme";
+import { colors } from "../../constants/Theme";
 import { useAuth } from "../../store/auth";
+import { styles } from "../../styles/auth/login.styles";
 
 export default function Login() {
   const router = useRouter();
@@ -19,16 +19,21 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleSignIn = () => {
-    const success = login(email, password);
-
-    if (!success) {
+  const handleSignIn = async () => {
+    if (!email || !password) {
       setError("Enter both email and password to continue.");
       return;
     }
 
-    setError("");
-    router.replace("/");
+    const success = login(email, password);
+
+    try {
+      setError("");
+      await success;
+      router.replace("/");
+    } catch (e: any) {
+      setError(e?.message ?? "Sign-in failed. Please try again.");
+    }
   };
 
   return (
@@ -104,115 +109,3 @@ export default function Login() {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  backgroundGlow: {
-    position: "absolute",
-    top: -120,
-    right: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 220,
-    backgroundColor: colors.blue50,
-    opacity: 0.9,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    boxShadow: "0px 3px 8px rgba(30, 50, 100, 0.08)",
-    elevation: 5,
-  },
-  headerBlock: {
-    marginBottom: spacing.xl,
-  },
-  kicker: {
-    color: colors.blue500,
-    fontSize: font.size.sm,
-    fontWeight: font.weight.semibold,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginBottom: spacing.sm,
-  },
-  title: {
-    color: colors.gray900,
-    fontSize: font.size.xxl,
-    fontWeight: font.weight.bold,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    color: colors.gray500,
-    fontSize: font.size.md,
-    lineHeight: 22,
-  },
-  form: {
-    gap: spacing.lg,
-  },
-  fieldGroup: {
-    gap: spacing.sm,
-  },
-  label: {
-    color: colors.gray700,
-    fontSize: font.size.sm,
-    fontWeight: font.weight.semibold,
-  },
-  input: {
-    minHeight: 52,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    color: colors.gray900,
-    paddingHorizontal: spacing.md,
-    fontSize: font.size.md,
-  },
-  error: {
-    color: colors.red500,
-    fontSize: font.size.sm,
-    fontWeight: font.weight.medium,
-  },
-  button: {
-    minHeight: 52,
-    borderRadius: radius.lg,
-    backgroundColor: colors.blue500,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonPressed: {
-    backgroundColor: colors.blue600,
-  },
-  buttonText: {
-    color: colors.white,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-  },
-  helperText: {
-    color: colors.gray500,
-    fontSize: font.size.sm,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  registerRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: spacing.sm,
-  },
-  registerText: {
-    color: colors.gray500,
-    fontSize: font.size.sm,
-  },
-  registerLink: {
-    color: colors.blue500,
-    fontSize: font.size.sm,
-    fontWeight: font.weight.semibold,
-  },
-});

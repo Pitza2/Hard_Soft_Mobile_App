@@ -70,15 +70,6 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     fontSize: font.size.md,
   },
-  inputError: {
-    borderColor: colors.red500,
-  },
-  fieldError: {
-    color: colors.red500,
-    fontSize: font.size.sm,
-    fontWeight: font.weight.medium,
-    marginTop: -spacing.sm,
-  },
   error: {
     color: colors.red500,
     fontSize: font.size.sm,
@@ -104,5 +95,20 @@ export const styles = StyleSheet.create({
     fontSize: font.size.sm,
     lineHeight: 20,
     textAlign: "center",
+  },
+  registerRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  registerText: {
+    color: colors.gray500,
+    fontSize: font.size.sm,
+  },
+  registerLink: {
+    color: colors.blue500,
+    fontSize: font.size.sm,
+    fontWeight: font.weight.semibold,
   },
 });
