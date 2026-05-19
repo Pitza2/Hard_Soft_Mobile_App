@@ -22,11 +22,16 @@ bool PulseOximeterComponent::begin() {
   }
 
   delay(AppConfig::PULSE_OXIMETER_STARTUP_DELAY_MS);
+  sleeping_ = false;
   Serial.println("Pulse oximeter ready");
   return true;
 }
 
 bool PulseOximeterComponent::read(String& jsonPayload) {
+  if (sleeping_) {
+    return false;
+  }
+
   lastReading_ = bioHub_.readBpm();
   hasReading_ = true;
 
@@ -35,6 +40,37 @@ bool PulseOximeterComponent::read(String& jsonPayload) {
                 ",\"oxygen\":" + String(lastReading_.oxygen) +
                 ",\"status\":" + String(lastReading_.status) +
                 ",\"ext_status\":" + String(lastReading_.extStatus) + "}";
+  return true;
+}
+
+bool PulseOximeterComponent::sleep() {
+  if (sleeping_) {
+    return true;
+  }
+
+  const uint8_t status = bioHub_.max30101Control(0);
+  if (status != 0) {
+    Serial.printf("Pulse oximeter sleep failed: %u\n", status);
+    return false;
+  }
+
+  sleeping_ = true;
+  return true;
+}
+
+bool PulseOximeterComponent::wake() {
+  if (!sleeping_) {
+    return true;
+  }
+
+  const uint8_t status = bioHub_.max30101Control(1);
+  if (status != 0) {
+    Serial.printf("Pulse oximeter wake failed: %u\n", status);
+    return false;
+  }
+
+  delay(AppConfig::PULSE_OXIMETER_STARTUP_DELAY_MS);
+  sleeping_ = false;
   return true;
 }
 

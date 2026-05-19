@@ -13,6 +13,8 @@ class PulseOximeterComponent : public Component {
   const char* name() const override;
   bool begin() override;
   bool read(String& jsonPayload) override;
+  bool sleep();
+  bool wake();
   bool hasValidOxygenReading() const;
   int heartRate() const;
   int oxygen() const;
@@ -22,4 +24,5 @@ class PulseOximeterComponent : public Component {
   SparkFun_Bio_Sensor_Hub bioHub_;
   bioData lastReading_ {};
   bool hasReading_ = false;
+  bool sleeping_ = false;
 };

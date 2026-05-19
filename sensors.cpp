@@ -8,10 +8,10 @@
 #include "config/AppConfig.h"
 #include "core/FirebaseClient.h"
 
-FirebaseClient firebase(AppConfig::WIFI_SSID,
-                        AppConfig::WIFI_PASSWORD,
-                        AppConfig::FIREBASE_DATABASE_URL,
-                        AppConfig::FIREBASE_AUTH_TOKEN);
+AppFirebaseClient firebase(AppConfig::WIFI_SSID,
+                           AppConfig::WIFI_PASSWORD,
+                           AppConfig::FIREBASE_DATABASE_URL,
+                           AppConfig::FIREBASE_AUTH_TOKEN);
 BuzzerComponent buzzer;
 GyroComponent gyro;
 PulseOximeterComponent pulseOximeter;
@@ -109,7 +109,9 @@ void setup() {
   Wire.begin(AppConfig::I2C_SDA_PIN, AppConfig::I2C_SCL_PIN);
   Wire.setClock(100000);
 
-  firebase.begin();
+  if (!firebase.begin()) {
+    Serial.println("Firebase init failed");
+  }
   buzzer.begin();
   gyroAvailable = gyro.begin();
   pulseOximeterAvailable = pulseOximeter.begin();
@@ -127,6 +129,8 @@ void setup() {
 }
 
 void loop() {
+  firebase.loop();
+
   if (gyroAvailable && !gyro.update()) {
     Serial.println("Gyro read failed");
   }

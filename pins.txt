@@ -1,0 +1,8 @@
+ESP - Sensors
+3v3 - 3v3 All Sensors
+GND - GND All Sensors
+GPIO 4 - RST SPO2 Sensor
+GPIO 5 - MFIO SPO2 Sensor
+GPIO 18 - Red Push Button
+GPIO 21- SDA All Sensors
+GPIO 22 - SCL All Sensors
