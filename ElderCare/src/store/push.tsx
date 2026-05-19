@@ -1,24 +1,32 @@
-import firestore from "@react-native-firebase/firestore";
-import messaging from "@react-native-firebase/messaging";
+import {
+  collection,
+  doc,
+  getFirestore,
+  setDoc,
+} from "@react-native-firebase/firestore";
+import {
+  AuthorizationStatus,
+  getMessaging,
+  getToken,
+  requestPermission,
+} from "@react-native-firebase/messaging";
 import * as Device from "expo-device";
 
 export default async function registerForPushNotifications(uid: string) {
   if (!Device.isDevice) return;
-  console.log("Registering for push notifications with UID:", uid);
-  const authStatus = await messaging().requestPermission();
+  const messaging = getMessaging();
+  const authStatus = await requestPermission(messaging);
   const enabled =
-    authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-    authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+    authStatus === AuthorizationStatus.AUTHORIZED ||
+    authStatus === AuthorizationStatus.PROVISIONAL;
 
   if (!enabled) return;
 
-  const fcmToken = await messaging().getToken();
-  console.log("Obtained FCM token:", fcmToken);
+  const fcmToken = await getToken(messaging);
   try {
-    await firestore()
-      .collection("users")
-      .doc(uid)
-      .set({ fcmToken }, { merge: true });
+    const db = getFirestore();
+    const userRef = doc(collection(db, "users"), uid);
+    await setDoc(userRef, { fcmToken }, { merge: true });
   } catch (error) {
     console.warn("Unable to save push token to Firestore", error);
   }
