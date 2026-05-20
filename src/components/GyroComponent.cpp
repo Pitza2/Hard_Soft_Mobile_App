@@ -4,7 +4,24 @@
 
 #include "config/AppConfig.h"
 
+namespace {
+constexpr float kGravityMs2 = 9.80665f;
+constexpr float kRadToDeg = 57.29578f;
+constexpr float kFallAccelRangeThresholdMs2 = 5.5f;
+constexpr float kFallGyroRangeThresholdDps = 12.0f;
+constexpr float kFallPostureAngleThresholdDeg = 120.0f;   // Changed during calibration
+constexpr float kFallPostureAngleThresholdDegInv = 45.0f;
+constexpr uint32_t kFallLatchMs = 3000;
+constexpr float kMinSampleIntervalSeconds = 0.001f;
+constexpr float kClampMin = -1.0f;
+constexpr float kClampMax = 1.0f;
+}
+
 const char* GyroComponent::name() const { return "gyro"; }
+
+bool GyroComponent::isFallDetected() const {
+  return fallState_ == FallState::kFallDetected;
+}
 
 bool GyroComponent::begin() {
   if (!mpu_.begin()) {
@@ -36,14 +53,14 @@ bool GyroComponent::update() {
 
   const float accelMagnitude =
       sqrtf(accelX_ * accelX_ + accelY_ * accelY_ + accelZ_ * accelZ_);
-  accelMagnitudeG_ = accelMagnitude / 9.80665f;
+  accelMagnitudeG_ = accelMagnitude / kGravityMs2;
 
   const float gyroMagnitudeRad =
       sqrtf(gyroX_ * gyroX_ + gyroY_ * gyroY_ + gyroZ_ * gyroZ_);
-  gyroMagnitudeDps_ = gyroMagnitudeRad * 57.29578f;
+  gyroMagnitudeDps_ = gyroMagnitudeRad * kRadToDeg;
 
   updateStepCount(accelMagnitudeG_);
-  updateFallState(accelMagnitudeG_, gyroMagnitudeDps_);
+  updateFallState();
   hasSample_ = true;
   return true;
 }
@@ -62,6 +79,10 @@ bool GyroComponent::read(String& jsonPayload) {
                 ",\"temperature_c\":" + String(temperatureC_, 2) +
                 ",\"accel_mag_g\":" + String(accelMagnitudeG_, 3) +
                 ",\"gyro_mag_dps\":" + String(gyroMagnitudeDps_, 1) +
+                ",\"jerk_mag_gps\":" + String(jerkMagnitudeGps_, 3) +
+                ",\"accel_range_ms2\":" + String(accelRangeMs2_, 3) +
+                ",\"gyro_range_dps\":" + String(gyroRangeDps_, 1) +
+                ",\"posture_angle_deg\":" + String(postureAngleDeg_, 1) +
                 ",\"step_count\":" + String(stepCount_) +
                 ",\"fall_detected\":" +
                 String(fallState_ == FallState::kFallDetected ? "true"
@@ -98,34 +119,61 @@ void GyroComponent::updateStepCount(float accelMagnitudeG) {
   }
 }
 
-void GyroComponent::updateFallState(float accelMagnitudeG,
-                                    float gyroMagnitudeDps) {
+void GyroComponent::updateFallState() {
   const uint32_t nowMs = millis();
+  const float accelXG = accelX_ / kGravityMs2; // Convert from m/s^2 to g units (values easier to understand)
+  const float accelYG = accelY_ / kGravityMs2;
+  const float accelZG = accelZ_ / kGravityMs2;
+  const float accelMagnitudeMs2 =             // Convert back from g to m/s^2
+      accelMagnitudeG_ > 0.0f ? accelMagnitudeG_ * kGravityMs2 : kGravityMs2;
+
+  jerkMagnitudeGps_ = 0.0f;
+  if (hasSample_ && lastSampleAtMs_ != 0) {
+    const float sampleIntervalSeconds =
+        (nowMs - lastSampleAtMs_) / 1000.0f;
+    if (sampleIntervalSeconds >= kMinSampleIntervalSeconds) {
+      const float jerkX = (accelXG - prevAccelXG_) / sampleIntervalSeconds;
+      const float jerkY = (accelYG - prevAccelYG_) / sampleIntervalSeconds;
+      const float jerkZ = (accelZG - prevAccelZG_) / sampleIntervalSeconds;
+      jerkMagnitudeGps_ = sqrtf(jerkX * jerkX + jerkY * jerkY + jerkZ * jerkZ);
+    }
+  }
+
+  float postureCos = accelZ_ / accelMagnitudeMs2; // Calculates posture angle of the device, cos = adj / hypotenuse (Cosine of the angle between phone and the total aceleration vector)
+  if (postureCos < kClampMin) {
+    postureCos = kClampMin;
+  } else if (postureCos > kClampMax) {
+    postureCos = kClampMax;
+  }
+  postureAngleDeg_ = acosf(postureCos) * kRadToDeg; // Convert cosine to an angle in radians and then to degrees
+
+  updateFallWindows(); // Save accelerometer and gyroscope magnitude inside a 50 samples window (1 second)
+  // How much the acceleration and rotation speed changes in the window
+  accelRangeMs2_ = computeWindowRange(accelWindow_) * kGravityMs2; // Calculates MAX-MIN in the recent window (convert from g units to m/s^2)
+  gyroRangeDps_ = computeWindowRange(gyroWindow_);
+
+  prevAccelXG_ = accelXG;
+  prevAccelYG_ = accelYG;
+  prevAccelZG_ = accelZG;
+  lastSampleAtMs_ = nowMs;
 
   switch (fallState_) {
     case FallState::kMonitoring:
-      if (accelMagnitudeG < AppConfig::FALL_FREE_FALL_THRESHOLD_G) {
-        fallState_ = FallState::kFreeFallCandidate;
-        stateStartedAtMs_ = nowMs;
-      }
-      break;
-
-    case FallState::kFreeFallCandidate:
-      if (nowMs - stateStartedAtMs_ > AppConfig::FALL_CONFIRM_WINDOW_MS) {
-        fallState_ = FallState::kMonitoring;
-        stateStartedAtMs_ = nowMs;
-        break;
-      }
-
-      if (accelMagnitudeG > AppConfig::FALL_IMPACT_THRESHOLD_G &&
-          gyroMagnitudeDps > AppConfig::FALL_ROTATION_THRESHOLD_DPS) {
+      if (windowCount_ == kFallWindowSize &&
+          accelRangeMs2_ >= kFallAccelRangeThresholdMs2 &&
+          gyroRangeDps_ >= kFallGyroRangeThresholdDps &&
+          (postureAngleDeg_ >= kFallPostureAngleThresholdDeg || postureAngleDeg_ <= kFallPostureAngleThresholdDegInv)) {
+        Serial.printf(
+            "Fall detected: accel_range=%.2f m/s^2 gyro_range=%.2f dps "
+            "posture=%.1f deg\n",
+            accelRangeMs2_, gyroRangeDps_, postureAngleDeg_);
         fallState_ = FallState::kFallDetected;
         stateStartedAtMs_ = nowMs;
       }
       break;
 
     case FallState::kFallDetected:
-      if (nowMs - stateStartedAtMs_ > AppConfig::FALL_LATCH_MS) {
+      if (nowMs - stateStartedAtMs_ > kFallLatchMs) {
         fallState_ = FallState::kMonitoring;
         stateStartedAtMs_ = nowMs;
       }
@@ -133,12 +181,38 @@ void GyroComponent::updateFallState(float accelMagnitudeG,
   }
 }
 
+void GyroComponent::updateFallWindows() {
+  accelWindow_[windowIndex_] = accelMagnitudeG_;
+  gyroWindow_[windowIndex_] = gyroMagnitudeDps_;
+  windowIndex_ = (windowIndex_ + 1) % kFallWindowSize;
+  if (windowCount_ < kFallWindowSize) {
+    ++windowCount_;
+  }
+}
+
+float GyroComponent::computeWindowRange(const float* values) const {
+  if (windowCount_ == 0) {
+    return 0.0f;
+  }
+
+  float minValue = values[0];
+  float maxValue = values[0];
+  for (size_t i = 1; i < windowCount_; ++i) {
+    if (values[i] < minValue) {
+      minValue = values[i];
+    }
+    if (values[i] > maxValue) {
+      maxValue = values[i];
+    }
+  }
+
+  return maxValue - minValue;
+}
+
 const char* GyroComponent::fallStateName() const {
   switch (fallState_) {
     case FallState::kMonitoring:
       return "monitoring";
-    case FallState::kFreeFallCandidate:
-      return "free_fall_candidate";
     case FallState::kFallDetected:
       return "fall_detected";
   }

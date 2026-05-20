@@ -54,5 +54,5 @@ float TemperatureComponent::readTemperatureC() {
   const uint8_t msb = Wire.read();
   const uint8_t lsb = Wire.read();
   const int16_t raw = (static_cast<int16_t>(msb) << 8) | lsb;
-  return raw / 256.0f + 64.0;
+  return raw / 256.0f + 64.4;
 }
