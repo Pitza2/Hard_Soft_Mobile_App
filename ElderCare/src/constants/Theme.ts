@@ -1,6 +1,6 @@
 /**
  * constants/theme.ts
- * Geriatric Care — Caretaker Dashboard
+ * Elderly Care — Caretaker Dashboard
  *
  * Design intent:
  *  - Clean clinical whites and cool grays as the base (reduces visual fatigue

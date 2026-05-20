@@ -38,6 +38,7 @@
           }
         }
       ],
+      "./plugins/withOnUserLeaveHintGuard.js",
       "expo-build-properties",
       "@react-native-firebase/auth"
     ],
