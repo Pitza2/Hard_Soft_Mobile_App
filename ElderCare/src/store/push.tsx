@@ -4,25 +4,24 @@ import {
   getFirestore,
   setDoc,
 } from "@react-native-firebase/firestore";
-import {
-  AuthorizationStatus,
-  getMessaging,
-  getToken,
-  requestPermission,
-} from "@react-native-firebase/messaging";
+import { getMessaging, getToken } from "@react-native-firebase/messaging";
 import * as Device from "expo-device";
+import {
+  requestNotificationPermission,
+  setupAndroidChannel,
+} from "@/lib/notifications";
 
 export default async function registerForPushNotifications(uid: string) {
   if (!Device.isDevice) return;
+
+  await setupAndroidChannel();
+
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+
   const messaging = getMessaging();
-  const authStatus = await requestPermission(messaging);
-  const enabled =
-    authStatus === AuthorizationStatus.AUTHORIZED ||
-    authStatus === AuthorizationStatus.PROVISIONAL;
-
-  if (!enabled) return;
-
   const fcmToken = await getToken(messaging);
+
   try {
     const db = getFirestore();
     const userRef = doc(collection(db, "users"), uid);

@@ -3,6 +3,7 @@ import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../../constants/Theme";
 import { useAuth } from "../../store/auth";
 import { styles } from "../../styles/tabs/styles";
+import { useBle } from "@/lib/BleProvider";
 
 export const options = {
   headerShown: false,
