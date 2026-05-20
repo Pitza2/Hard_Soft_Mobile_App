@@ -1,9 +1,7 @@
+import "expo-router/entry";
 import {
     getMessaging,
     setBackgroundMessageHandler,
 } from "@react-native-firebase/messaging";
-import "expo-router/entry";
 
-const messaging = getMessaging();
-
-setBackgroundMessageHandler(messaging, async (remoteMessage) => {});
+setBackgroundMessageHandler(getMessaging(), async (_remoteMessage) => {});

@@ -100,7 +100,7 @@ export default function Login() {
 
           <View style={styles.registerRow}>
             <Text style={styles.registerText}>Don't have an account?</Text>
-            <Pressable onPress={() => router.push("/register")}>
+            <Pressable onPress={() => router.push("/(auth)/register")}>
               <Text style={styles.registerLink}> Register</Text>
             </Pressable>
           </View>

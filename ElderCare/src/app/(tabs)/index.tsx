@@ -3,6 +3,7 @@ import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../../constants/Theme";
 import { useAuth } from "../../store/auth";
 import { styles } from "../../styles/tabs/styles";
+import { useBle } from "@/lib/BleProvider";
 
 export const options = {
   headerShown: false,
@@ -26,7 +27,7 @@ export default function HomeScreen() {
       <View style={styles.headerCard}>
         <View style={styles.headerCopy}>
           <Text style={styles.kicker}>ElderCare</Text>
-          <Text style={styles.title}>Geriatric patient dashboard</Text>
+          <Text style={styles.title}>Elderly patient dashboard</Text>
           <Text style={styles.subtitle}>
             Daily vitals and care progress for a quick clinical review.
           </Text>

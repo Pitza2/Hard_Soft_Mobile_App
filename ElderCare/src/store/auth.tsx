@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        await registerForPushNotifications(u.email!); // pass uid directly
+        await registerForPushNotifications(u.email!);
       }
       setLoading(false);
     });

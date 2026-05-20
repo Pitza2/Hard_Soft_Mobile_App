@@ -1,13 +1,11 @@
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Button, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAuth } from "../../store/auth";
 
-export default function RegisterScreen({
-  onGoToLogin,
-}: {
-  onGoToLogin: () => void;
-}) {
+export default function RegisterScreen() {
   const { register } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -16,6 +14,7 @@ export default function RegisterScreen({
     setError("");
     try {
       await register(email, password);
+      router.replace("/");
     } catch (e: any) {
       setError(e.message);
     }
@@ -40,7 +39,7 @@ export default function RegisterScreen({
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Button title="Register" onPress={handleRegister} />
-      <Text onPress={onGoToLogin} style={styles.toggle}>
+      <Text onPress={() => router.back()} style={styles.toggle}>
         Already have an account? Login
       </Text>
     </View>
