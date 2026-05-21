@@ -43,6 +43,12 @@ void GyroComponent::setCalibratedPostureMean(float meanAngleDeg) {
                 fallPostureAngleThresholdDegInv_);
 }
 
+void GyroComponent::triggerFallDetected() {
+  fallState_ = FallState::kFallDetected;
+  stateStartedAtMs_ = millis();
+  Serial.println("Manual fall trigger activated");
+}
+
 bool GyroComponent::begin() {
   if (!mpu_.begin()) {
     Serial.println("Failed to find MPU6050 chip");

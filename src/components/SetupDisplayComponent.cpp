@@ -5,6 +5,7 @@
 
 #include "components/BluetoothComponent.h"
 #include "components/GyroComponent.h"
+#include "config/AppConfig.h"
 
 namespace {
 constexpr int kScreenWidth = 128;
@@ -13,7 +14,7 @@ constexpr int kOledResetPin = -1;
 constexpr uint8_t kOledAddress = 0x3D;
 constexpr int kI2cSdaPin = 21;
 constexpr int kI2cSclPin = 22;
-constexpr int kReadyButtonPin = 18;
+constexpr int kReadyButtonPin = AppConfig::STOP_BUTTON_PIN;
 constexpr uint32_t kWelcomeDurationMs = 3500;
 constexpr uint32_t kSecondPromptDelayMs = 5000;
 constexpr char kPreferencesNamespace[] = "setup";
@@ -28,6 +29,10 @@ SetupDisplayComponent::SetupDisplayComponent()
     : display_(kScreenWidth, kScreenHeight, &Wire, kOledResetPin) {}
 
 const char* SetupDisplayComponent::name() const { return "setup_display"; }
+
+bool SetupDisplayComponent::isConfigurationComplete() const {
+  return uiState_ == UiState::kDone;
+}
 
 bool SetupDisplayComponent::begin() {
   pinMode(kReadyButtonPin, INPUT_PULLUP);
@@ -84,11 +89,20 @@ void SetupDisplayComponent::setGyroComponent(GyroComponent* gyro) {
   gyro_ = gyro;
 }
 
-void SetupDisplayComponent::setMockVitals(int heartRate, int oxygen,
-                                          float temperatureC) {
+void SetupDisplayComponent::setInputEnabled(bool enabled) {
+  inputEnabled_ = enabled;
+}
+
+void SetupDisplayComponent::setVitals(int heartRate, int oxygen,
+                                      float temperatureC) {
   heartRate_ = heartRate;
   oxygen_ = oxygen;
   temperatureC_ = temperatureC;
+}
+
+void SetupDisplayComponent::setMockVitals(int heartRate, int oxygen,
+                                          float temperatureC) {
+  setVitals(heartRate, oxygen, temperatureC);
 }
 
 void SetupDisplayComponent::loop() {
@@ -365,6 +379,13 @@ void SetupDisplayComponent::enterState(UiState nextState) {
 }
 
 bool SetupDisplayComponent::wasButtonPressed() {
+  if (!inputEnabled_) {
+    lastButtonReading_ = digitalRead(kReadyButtonPin);
+    stableButtonState_ = lastButtonReading_;
+    lastDebounceMs_ = millis();
+    return false;
+  }
+
   const bool reading = digitalRead(kReadyButtonPin);
 
   if (reading != lastButtonReading_) {

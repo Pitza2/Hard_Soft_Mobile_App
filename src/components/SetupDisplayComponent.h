@@ -17,8 +17,11 @@ class SetupDisplayComponent : public Component {
   bool begin() override;
   bool read(String& jsonPayload) override;
   void loop();
+  bool isConfigurationComplete() const;
   void setBluetoothComponent(const BluetoothComponent* bluetooth);
   void setGyroComponent(GyroComponent* gyro);
+  void setInputEnabled(bool enabled);
+  void setVitals(int heartRate, int oxygen, float temperatureC);
   void setMockVitals(int heartRate, int oxygen, float temperatureC);
 
  private:
@@ -68,6 +71,7 @@ class SetupDisplayComponent : public Component {
   bool stableButtonState_ = HIGH;
   uint32_t lastDebounceMs_ = 0;
   bool initialized_ = false;
+  bool inputEnabled_ = true;
   uint32_t watchStartedAtMs_ = 0;
   const BluetoothComponent* bluetooth_ = nullptr;
   GyroComponent* gyro_ = nullptr;

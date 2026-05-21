@@ -21,6 +21,7 @@ class GyroComponent : public Component {
   void setInterruptPin(int interruptPin);
   bool usingInterrupts() const;
   void setCalibratedPostureMean(float meanAngleDeg);
+  void triggerFallDetected();
 
  private:
   struct WindowSample {
