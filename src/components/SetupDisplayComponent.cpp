@@ -39,6 +39,9 @@ bool SetupDisplayComponent::begin() {
   }
 
   calibrationLoaded_ = loadCalibration();
+  if (calibrationLoaded_ && gyro_ != nullptr) {
+    gyro_->setCalibratedPostureMean(overallMeanAngleDeg_);
+  }
   if (calibrationLoaded_) {
     enterState(UiState::kDone);
     watchStartedAtMs_ = millis();
@@ -179,6 +182,9 @@ void SetupDisplayComponent::loop() {
                       walkingMeanAngleDeg_);
         Serial.printf("Overall mean posture angle: %.2f deg\n",
                       overallMeanAngleDeg_);
+        if (gyro_ != nullptr) {
+          gyro_->setCalibratedPostureMean(overallMeanAngleDeg_);
+        }
         calibrationLoaded_ = saveCalibration();
         enterState(UiState::kDone);
         watchStartedAtMs_ = millis();

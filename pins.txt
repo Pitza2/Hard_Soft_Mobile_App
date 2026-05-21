@@ -4,5 +4,12 @@ GND - GND All Sensors
 GPIO 4 - RST SPO2 Sensor
 GPIO 5 - MFIO SPO2 Sensor
 GPIO 18 - Red Push Button
+GPIO 19 - Int
 GPIO 21- SDA All Sensors
 GPIO 22 - SCL All Sensors
+GPIO 0 - Red Button
+GPIO 2 - Blue Button
+GPIO 34 - Buzzer 1
+GPIO 35 - Buzzer 2
+GPIO 32 - Led 1
+GPIO 33 - Led 2

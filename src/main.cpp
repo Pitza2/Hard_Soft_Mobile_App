@@ -1,28 +1,36 @@
 #include <Arduino.h>
 
-#include "components/BluetoothComponent.h"
 #include "components/GyroComponent.h"
-#include "components/SetupDisplayComponent.h"
 
 namespace {
-BluetoothComponent bluetooth;
 GyroComponent gyro;
-SetupDisplayComponent setupDisplay;
+
+constexpr int kGyroInterruptPin = 19;
 }
 
 void setup() {
   Serial.begin(115200);
-  bluetooth.begin();
-  setupDisplay.setBluetoothComponent(&bluetooth);
-  setupDisplay.setGyroComponent(&gyro);
-  setupDisplay.setMockVitals(72, 98, 36.7f);
-  setupDisplay.begin();
-  gyro.begin();
+  gyro.setInterruptPin(kGyroInterruptPin);
+
+  if (!gyro.begin()) {
+    Serial.println("Gyro init failed");
+    return;
+  }
+
+  Serial.println("Gyro sampling started");
 }
 
 void loop() {
-  bluetooth.loop();
-  gyro.update();
-  setupDisplay.loop();
-  delay(16);
+  if (!gyro.sampleIfNeeded()) {
+    delay(1);
+    return;
+  }
+
+  String gyroPayload;
+  if (!gyro.read(gyroPayload)) {
+    Serial.println("Gyro payload build failed");
+    return;
+  }
+
+  Serial.println(gyroPayload);
 }

@@ -1,21 +1,25 @@
 #include "components/GyroComponent.h"
 
 #include <math.h>
+#include <Wire.h>
 
 #include "config/AppConfig.h"
 
 namespace {
 constexpr float kGravityMs2 = 9.80665f;
 constexpr float kRadToDeg = 57.29578f;
+constexpr uint8_t kMpu6050Address = 0x68;
+constexpr uint8_t kMpu6050IntPinConfigRegister = 0x37;
+constexpr uint8_t kMpu6050IntEnableRegister = 0x38;
 constexpr float kFallAccelRangeThresholdMs2 = 5.5f;
 constexpr float kFallGyroRangeThresholdDps = 12.0f;
-constexpr float kFallPostureAngleThresholdDeg = 120.0f;   // Changed during calibration
-constexpr float kFallPostureAngleThresholdDegInv = 45.0f;
 constexpr uint32_t kFallLatchMs = 3000;
 constexpr float kMinSampleIntervalSeconds = 0.001f;
 constexpr float kClampMin = -1.0f;
 constexpr float kClampMax = 1.0f;
 }
+
+volatile bool GyroComponent::interruptFired_ = false;
 
 const char* GyroComponent::name() const { return "gyro"; }
 
@@ -25,15 +29,44 @@ bool GyroComponent::isFallDetected() const {
 
 float GyroComponent::postureAngleDeg() const { return postureAngleDeg_; }
 
+void GyroComponent::setInterruptPin(int interruptPin) {
+  interruptPin_ = interruptPin;
+}
+
+bool GyroComponent::usingInterrupts() const { return interruptPin_ >= 0; }
+
+void GyroComponent::setCalibratedPostureMean(float meanAngleDeg) {
+  fallPostureAngleThresholdDeg_ = meanAngleDeg + 30.0f;
+  fallPostureAngleThresholdDegInv_ = meanAngleDeg - 30.0f;
+  Serial.printf("Posture thresholds set: upper=%.2f lower=%.2f\n",
+                fallPostureAngleThresholdDeg_,
+                fallPostureAngleThresholdDegInv_);
+}
+
 bool GyroComponent::begin() {
   if (!mpu_.begin()) {
     Serial.println("Failed to find MPU6050 chip");
     return false;
   }
 
+  mpu_.setSampleRateDivisor(19);
   mpu_.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu_.setGyroRange(MPU6050_RANGE_500_DEG);
   mpu_.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  mpu_.setInterruptPinPolarity(false);
+  mpu_.setInterruptPinLatch(false);
+
+  if (usingInterrupts()) {
+    if (!configureDataReadyInterrupt()) {
+      Serial.println("MPU6050 interrupt config failed");
+      return false;
+    }
+
+    pinMode(interruptPin_, INPUT);
+    attachInterrupt(digitalPinToInterrupt(interruptPin_), handleInterrupt,
+                    RISING);
+    interruptFired_ = true;
+  }
 
   Serial.println("MPU6050 ready");
   return true;
@@ -65,6 +98,21 @@ bool GyroComponent::update() {
   updateFallState();
   hasSample_ = true;
   return true;
+}
+
+bool GyroComponent::sampleIfNeeded() {
+  if (!usingInterrupts()) {
+    return update();
+  }
+
+  if (!interruptFired_) {
+    return false;
+  }
+
+  noInterrupts();
+  interruptFired_ = false;
+  interrupts();
+  return update();
 }
 
 bool GyroComponent::read(String& jsonPayload) {
@@ -149,10 +197,9 @@ void GyroComponent::updateFallState() {
   }
   postureAngleDeg_ = acosf(postureCos) * kRadToDeg; // Convert cosine to an angle in radians and then to degrees
 
-  updateFallWindows(); // Save accelerometer and gyroscope magnitude inside a 50 samples window (1 second)
-  // How much the acceleration and rotation speed changes in the window
-  accelRangeMs2_ = computeWindowRange(accelWindow_) * kGravityMs2; // Calculates MAX-MIN in the recent window (convert from g units to m/s^2)
-  gyroRangeDps_ = computeWindowRange(gyroWindow_);
+  updateFallWindow(nowMs);
+  pruneFallWindow(nowMs);
+  computeWindowRanges();
 
   prevAccelXG_ = accelXG;
   prevAccelYG_ = accelYG;
@@ -161,10 +208,11 @@ void GyroComponent::updateFallState() {
 
   switch (fallState_) {
     case FallState::kMonitoring:
-      if (windowCount_ == kFallWindowSize &&
+      if (windowCount_ > 0 &&
           accelRangeMs2_ >= kFallAccelRangeThresholdMs2 &&
           gyroRangeDps_ >= kFallGyroRangeThresholdDps &&
-          (postureAngleDeg_ >= kFallPostureAngleThresholdDeg || postureAngleDeg_ <= kFallPostureAngleThresholdDegInv)) {
+          (postureAngleDeg_ >= fallPostureAngleThresholdDeg_ ||
+           postureAngleDeg_ <= fallPostureAngleThresholdDegInv_)) {
         Serial.printf(
             "Fall detected: accel_range=%.2f m/s^2 gyro_range=%.2f dps "
             "posture=%.1f deg\n",
@@ -183,32 +231,63 @@ void GyroComponent::updateFallState() {
   }
 }
 
-void GyroComponent::updateFallWindows() {
-  accelWindow_[windowIndex_] = accelMagnitudeG_;
-  gyroWindow_[windowIndex_] = gyroMagnitudeDps_;
-  windowIndex_ = (windowIndex_ + 1) % kFallWindowSize;
-  if (windowCount_ < kFallWindowSize) {
+void GyroComponent::updateFallWindow(uint32_t nowMs) {
+  const size_t insertIndex =
+      (windowStartIndex_ + windowCount_) % kFallWindowCapacity;
+  windowSamples_[insertIndex] = {nowMs, accelMagnitudeG_, gyroMagnitudeDps_};
+
+  if (windowCount_ < kFallWindowCapacity) {
     ++windowCount_;
+    return;
+  }
+
+  windowStartIndex_ = (windowStartIndex_ + 1) % kFallWindowCapacity;
+}
+
+void GyroComponent::pruneFallWindow(uint32_t nowMs) {
+  while (windowCount_ > 0) {
+    const WindowSample& oldest = windowSamples_[windowStartIndex_];
+    if (nowMs - oldest.timestampMs <= kFallWindowMs) {
+      break;
+    }
+
+    windowStartIndex_ = (windowStartIndex_ + 1) % kFallWindowCapacity;
+    --windowCount_;
   }
 }
 
-float GyroComponent::computeWindowRange(const float* values) const {
+void GyroComponent::computeWindowRanges() {
   if (windowCount_ == 0) {
-    return 0.0f;
+    accelRangeMs2_ = 0.0f;
+    gyroRangeDps_ = 0.0f;
+    return;
   }
 
-  float minValue = values[0];
-  float maxValue = values[0];
+  const WindowSample& first = windowSamples_[windowStartIndex_];
+  float minAccelG = first.accelMagnitudeG;
+  float maxAccelG = first.accelMagnitudeG;
+  float minGyroDps = first.gyroMagnitudeDps;
+  float maxGyroDps = first.gyroMagnitudeDps;
+
   for (size_t i = 1; i < windowCount_; ++i) {
-    if (values[i] < minValue) {
-      minValue = values[i];
+    const WindowSample& sample =
+        windowSamples_[(windowStartIndex_ + i) % kFallWindowCapacity];
+    if (sample.accelMagnitudeG < minAccelG) {
+      minAccelG = sample.accelMagnitudeG;
     }
-    if (values[i] > maxValue) {
-      maxValue = values[i];
+    if (sample.accelMagnitudeG > maxAccelG) {
+      maxAccelG = sample.accelMagnitudeG;
+    }
+    if (sample.gyroMagnitudeDps < minGyroDps) {
+      minGyroDps = sample.gyroMagnitudeDps;
+    }
+    if (sample.gyroMagnitudeDps > maxGyroDps) {
+      maxGyroDps = sample.gyroMagnitudeDps;
     }
   }
 
-  return maxValue - minValue;
+  accelRangeMs2_ = (maxAccelG - minAccelG) * kGravityMs2;
+  gyroRangeDps_ = maxGyroDps - minGyroDps;
 }
 
 const char* GyroComponent::fallStateName() const {
@@ -220,4 +299,20 @@ const char* GyroComponent::fallStateName() const {
   }
 
   return "unknown";
+}
+
+void IRAM_ATTR GyroComponent::handleInterrupt() { interruptFired_ = true; }
+
+bool GyroComponent::configureDataReadyInterrupt() {
+  // Use pulsed interrupt behavior so each data-ready event generates a fresh
+  // rising edge on the ESP32 interrupt pin.
+  return writeRegister(kMpu6050IntPinConfigRegister, 0x00) &&
+         writeRegister(kMpu6050IntEnableRegister, 0x01);
+}
+
+bool GyroComponent::writeRegister(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(kMpu6050Address);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
 }

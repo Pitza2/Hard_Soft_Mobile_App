@@ -13,20 +13,34 @@ class GyroComponent : public Component {
   bool begin() override;
   bool read(String& jsonPayload) override;
   bool update();
+  bool sampleIfNeeded();
   bool isFallDetected() const;
   float postureAngleDeg() const;
+  void setInterruptPin(int interruptPin);
+  bool usingInterrupts() const;
+  void setCalibratedPostureMean(float meanAngleDeg);
 
  private:
+  struct WindowSample {
+    uint32_t timestampMs;
+    float accelMagnitudeG;
+    float gyroMagnitudeDps;
+  };
+
+  static void IRAM_ATTR handleInterrupt();
   enum class FallState : uint8_t {
     kMonitoring,
     kFallDetected,
   };
 
+  bool configureDataReadyInterrupt();
+  bool writeRegister(uint8_t reg, uint8_t value);
   void updateStepCount(float accelMagnitudeG);
   void updateFallState();
   const char* fallStateName() const;
-  void updateFallWindows();
-  float computeWindowRange(const float* values) const;
+  void updateFallWindow(uint32_t nowMs);
+  void pruneFallWindow(uint32_t nowMs);
+  void computeWindowRanges();
 
   Adafruit_MPU6050 mpu_;
   FallState fallState_ = FallState::kMonitoring;
@@ -41,6 +55,8 @@ class GyroComponent : public Component {
   float accelMagnitudeG_ = 0.0f;
   float gyroMagnitudeDps_ = 0.0f;
   float postureAngleDeg_ = 0.0f;
+  float fallPostureAngleThresholdDeg_ = 120.0f;
+  float fallPostureAngleThresholdDegInv_ = 45.0f;
   float accelRangeMs2_ = 0.0f;
   float gyroRangeDps_ = 0.0f;
   float prevAccelXG_ = 0.0f;
@@ -51,12 +67,14 @@ class GyroComponent : public Component {
   uint32_t stepCount_ = 0;
   uint32_t lastStepAtMs_ = 0;
   uint32_t lastSampleAtMs_ = 0;
-  size_t windowIndex_ = 0;
+  size_t windowStartIndex_ = 0;
   size_t windowCount_ = 0;
+  int interruptPin_ = -1;
   bool hasSample_ = false;
   bool stepPeakArmed_ = true;
 
-  static constexpr size_t kFallWindowSize = 50;
-  float accelWindow_[kFallWindowSize] = {};
-  float gyroWindow_[kFallWindowSize] = {};
+  static volatile bool interruptFired_;
+  static constexpr uint32_t kFallWindowMs = 1000;
+  static constexpr size_t kFallWindowCapacity = 128;
+  WindowSample windowSamples_[kFallWindowCapacity] = {};
 };

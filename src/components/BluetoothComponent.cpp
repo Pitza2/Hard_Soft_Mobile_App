@@ -64,6 +64,7 @@ void BluetoothComponent::getDisplayTime(uint8_t& hours, uint8_t& minutes) const 
 
 bool BluetoothComponent::begin() {
   BLEDevice::init(kDeviceName);
+  BLEDevice::setMTU(247);
 
   server_ = BLEDevice::createServer();
   if (server_ == nullptr) {
