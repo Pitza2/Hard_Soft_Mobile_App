@@ -8,11 +8,13 @@
 namespace {
 constexpr float kGravityMs2 = 9.80665f;
 constexpr float kRadToDeg = 57.29578f;
+constexpr float kDegToRad = 0.01745329f;
 constexpr uint8_t kMpu6050Address = 0x68;
 constexpr uint8_t kMpu6050IntPinConfigRegister = 0x37;
 constexpr uint8_t kMpu6050IntEnableRegister = 0x38;
 constexpr float kClampMin = -1.0f;
 constexpr float kClampMax = 1.0f;
+constexpr float kMinVectorMagnitude = 0.001f;
 }
 
 volatile bool GyroComponent::interruptFired_ = false;
@@ -56,6 +58,7 @@ void GyroComponent::dismissFallDetected() {
 
   fallState_ = FallState::kMonitoring;
   stateStartedAtMs_ = millis();
+  fallCandidateStartedAtMs_ = 0;
   Serial.println("Fall detection dismissed");
 }
 
@@ -189,10 +192,10 @@ void GyroComponent::updateStepCount(float accelMagnitudeG) {
 
 void GyroComponent::updateFallState() {
   const uint32_t nowMs = millis();
-  const float accelXG = accelX_ / kGravityMs2; // Convert from m/s^2 to g units (values easier to understand)
+  const float accelXG = accelX_ / kGravityMs2;
   const float accelYG = accelY_ / kGravityMs2;
   const float accelZG = accelZ_ / kGravityMs2;
-  const float accelMagnitudeMs2 =             // Convert back from g to m/s^2
+  const float accelMagnitudeMs2 =
       accelMagnitudeG_ > 0.0f ? accelMagnitudeG_ * kGravityMs2 : kGravityMs2;
 
   jerkMagnitudeGps_ = 0.0f;
@@ -207,17 +210,92 @@ void GyroComponent::updateFallState() {
     }
   }
 
-  float postureCos = accelZ_ / accelMagnitudeMs2; // Calculates posture angle of the device, cos = adj / hypotenuse (Cosine of the angle between phone and the total aceleration vector)
+  float postureCos = accelZ_ / accelMagnitudeMs2;
   if (postureCos < kClampMin) {
     postureCos = kClampMin;
   } else if (postureCos > kClampMax) {
     postureCos = kClampMax;
   }
-  postureAngleDeg_ = acosf(postureCos) * kRadToDeg; // Convert cosine to an angle in radians and then to degrees
+  postureAngleDeg_ = acosf(postureCos) * kRadToDeg;
+  if (!postureFilterInitialized_) {
+    filteredPostureAngleDeg_ = postureAngleDeg_;
+    postureFilterInitialized_ = true;
+  } else {
+    filteredPostureAngleDeg_ += AppConfig::FALL_POSTURE_FILTER_ALPHA *
+                                (postureAngleDeg_ - filteredPostureAngleDeg_);
+  }
   rollDeg_ = atan2f(accelY_, accelZ_) * kRadToDeg;
   pitchDeg_ =
       atan2f(-accelX_, sqrtf(accelY_ * accelY_ + accelZ_ * accelZ_)) *
       kRadToDeg;
+
+  if (accelMagnitudeMs2 > kMinVectorMagnitude) {
+    const float unitX = accelX_ / accelMagnitudeMs2;
+    const float unitY = accelY_ / accelMagnitudeMs2;
+    const float unitZ = accelZ_ / accelMagnitudeMs2;
+
+    if (!gravityFilterInitialized_) {
+      filteredGravityX_ = unitX;
+      filteredGravityY_ = unitY;
+      filteredGravityZ_ = unitZ;
+      gravityFilterInitialized_ = true;
+    } else {
+      filteredGravityX_ +=
+          AppConfig::FALL_POSTURE_FILTER_ALPHA * (unitX - filteredGravityX_);
+      filteredGravityY_ +=
+          AppConfig::FALL_POSTURE_FILTER_ALPHA * (unitY - filteredGravityY_);
+      filteredGravityZ_ +=
+          AppConfig::FALL_POSTURE_FILTER_ALPHA * (unitZ - filteredGravityZ_);
+    }
+
+    const float filteredMagnitude =
+        sqrtf(filteredGravityX_ * filteredGravityX_ +
+              filteredGravityY_ * filteredGravityY_ +
+              filteredGravityZ_ * filteredGravityZ_);
+    if (filteredMagnitude > kMinVectorMagnitude) {
+      filteredGravityX_ /= filteredMagnitude;
+      filteredGravityY_ /= filteredMagnitude;
+      filteredGravityZ_ /= filteredMagnitude;
+    }
+
+    const bool isStableForBaseline =
+        gyroMagnitudeDps_ <= AppConfig::POSTURE_BASELINE_STILL_DPS &&
+        fabsf(accelMagnitudeG_ - 1.0f) <=
+            AppConfig::POSTURE_BASELINE_STILL_ACCEL_DELTA_G;
+    if (!baselineGravityInitialized_) {
+      baselineGravityX_ = filteredGravityX_;
+      baselineGravityY_ = filteredGravityY_;
+      baselineGravityZ_ = filteredGravityZ_;
+      baselineGravityInitialized_ = true;
+    } else if (isStableForBaseline && fallState_ == FallState::kMonitoring) {
+      baselineGravityX_ += AppConfig::POSTURE_BASELINE_ALPHA *
+                           (filteredGravityX_ - baselineGravityX_);
+      baselineGravityY_ += AppConfig::POSTURE_BASELINE_ALPHA *
+                           (filteredGravityY_ - baselineGravityY_);
+      baselineGravityZ_ += AppConfig::POSTURE_BASELINE_ALPHA *
+                           (filteredGravityZ_ - baselineGravityZ_);
+
+      const float baselineMagnitude =
+          sqrtf(baselineGravityX_ * baselineGravityX_ +
+                baselineGravityY_ * baselineGravityY_ +
+                baselineGravityZ_ * baselineGravityZ_);
+      if (baselineMagnitude > kMinVectorMagnitude) {
+        baselineGravityX_ /= baselineMagnitude;
+        baselineGravityY_ /= baselineMagnitude;
+        baselineGravityZ_ /= baselineMagnitude;
+      }
+    }
+
+    float gravityDot = filteredGravityX_ * baselineGravityX_ +
+                       filteredGravityY_ * baselineGravityY_ +
+                       filteredGravityZ_ * baselineGravityZ_;
+    if (gravityDot < kClampMin) {
+      gravityDot = kClampMin;
+    } else if (gravityDot > kClampMax) {
+      gravityDot = kClampMax;
+    }
+    orientationChangeDeg_ = acosf(gravityDot) * kRadToDeg;
+  }
 
   updateFallWindow();
   computeWindowRanges();
@@ -229,27 +307,126 @@ void GyroComponent::updateFallState() {
 
   switch (fallState_) {
     case FallState::kMonitoring:
-      if (windowCount_ >= kFallWindowCapacity &&
-          accelRangeMs2_ >= AppConfig::FALL_ACCEL_RANGE_THRESHOLD_MS2 &&
-          gyroRangeDps_ >= AppConfig::FALL_GYRO_RANGE_THRESHOLD_DPS &&
-          (postureAngleDeg_ >= 135 ||
-           postureAngleDeg_ <= 45)) {
-        Serial.printf(
-            "Fall detected: accel_range=%.2f m/s^2 gyro_range=%.2f dps "
-            "posture=%.1f deg\n",
-            accelRangeMs2_, gyroRangeDps_, postureAngleDeg_);
-        fallState_ = FallState::kFallDetected;
+      if (accelMagnitudeG_ <= AppConfig::FALL_FREE_FALL_THRESHOLD_G ||
+          jerkMagnitudeGps_ >= AppConfig::FALL_IMPACT_JERK_GPS ||
+          gyroMagnitudeDps_ >= AppConfig::FALL_ROTATION_GYRO_DPS ||
+          (windowCount_ >= kFallWindowCapacity &&
+           accelRangeMs2_ >= AppConfig::FALL_ACCEL_RANGE_THRESHOLD_MS2 &&
+           gyroRangeDps_ >= AppConfig::FALL_GYRO_RANGE_THRESHOLD_DPS)) {
+        fallState_ = FallState::kCandidate;
         stateStartedAtMs_ = nowMs;
+        fallCandidateStartedAtMs_ = nowMs;
+        impactDetectedAtMs_ = 0;
+        stillnessStartedAtMs_ = 0;
+        peakOrientationChangeDeg_ = orientationChangeDeg_;
+        peakGyroDps_ = gyroMagnitudeDps_;
+        peakAccelG_ = accelMagnitudeG_;
+      } else {
+        fallCandidateStartedAtMs_ = 0;
       }
       break;
 
+    case FallState::kCandidate:
+      peakOrientationChangeDeg_ =
+          max(peakOrientationChangeDeg_, orientationChangeDeg_);
+      peakGyroDps_ = max(peakGyroDps_, gyroMagnitudeDps_);
+      peakAccelG_ = max(peakAccelG_, accelMagnitudeG_);
+
+      if (accelMagnitudeG_ >= AppConfig::FALL_IMPACT_ACCEL_G ||
+          accelMagnitudeG_ >= AppConfig::FALL_IMPACT_THRESHOLD_G) {
+        fallState_ = FallState::kImpactDetected;
+        stateStartedAtMs_ = nowMs;
+        impactDetectedAtMs_ = nowMs;
+        stillnessStartedAtMs_ = 0;
+        break;
+      }
+
+      if (orientationChangeDeg_ <= AppConfig::FALL_ORIENTATION_RECOVERY_DEG &&
+          nowMs - stateStartedAtMs_ >= AppConfig::FALL_ORIENTATION_CHECK_MS) {
+        fallState_ = FallState::kMonitoring;
+        stateStartedAtMs_ = nowMs;
+        fallCandidateStartedAtMs_ = 0;
+      } else if (nowMs - stateStartedAtMs_ > AppConfig::FALL_CONFIRM_WINDOW_MS) {
+        fallState_ = FallState::kMonitoring;
+        stateStartedAtMs_ = nowMs;
+        fallCandidateStartedAtMs_ = 0;
+      }
+      break;
+
+    case FallState::kImpactDetected: {
+      peakOrientationChangeDeg_ =
+          max(peakOrientationChangeDeg_, orientationChangeDeg_);
+      peakGyroDps_ = max(peakGyroDps_, gyroMagnitudeDps_);
+      peakAccelG_ = max(peakAccelG_, accelMagnitudeG_);
+
+      const bool orientationConfirmed =
+          peakOrientationChangeDeg_ >= AppConfig::FALL_ORIENTATION_CHANGE_DEG;
+      const bool rotationConfirmed =
+          peakGyroDps_ >= AppConfig::FALL_ROTATION_THRESHOLD_DPS;
+      const bool impactPersisted =
+          nowMs - impactDetectedAtMs_ >= AppConfig::FALL_PERSISTENCE_MS;
+      const bool isStillAfterImpact =
+          fabsf(accelMagnitudeG_ - 1.0f) <=
+              AppConfig::FALL_POST_IMPACT_STILLNESS_G &&
+          gyroMagnitudeDps_ <= AppConfig::FALL_POST_IMPACT_STILLNESS_DPS;
+
+      if (orientationConfirmed && rotationConfirmed && impactPersisted &&
+          isStillAfterImpact) {
+        if (stillnessStartedAtMs_ == 0) {
+          stillnessStartedAtMs_ = nowMs;
+          break;
+        }
+
+        if (nowMs - stillnessStartedAtMs_ >=
+            AppConfig::FALL_POST_IMPACT_STILLNESS_MS) {
+          Serial.printf(
+              "Fall detected: impact=%.2f g peak_gyro=%.1f dps "
+              "orientation_change=%.1f deg jerk=%.1f gps\n",
+              peakAccelG_, peakGyroDps_, peakOrientationChangeDeg_,
+              jerkMagnitudeGps_);
+          fallState_ = FallState::kFallDetected;
+          stateStartedAtMs_ = nowMs;
+          fallCandidateStartedAtMs_ = 0;
+          impactDetectedAtMs_ = 0;
+          stillnessStartedAtMs_ = 0;
+        }
+      } else {
+        stillnessStartedAtMs_ = 0;
+      }
+
+      if (orientationChangeDeg_ <= AppConfig::FALL_ORIENTATION_RECOVERY_DEG &&
+          nowMs - impactDetectedAtMs_ >= AppConfig::FALL_ORIENTATION_CHECK_MS) {
+        fallState_ = FallState::kMonitoring;
+        stateStartedAtMs_ = nowMs;
+        fallCandidateStartedAtMs_ = 0;
+        impactDetectedAtMs_ = 0;
+        stillnessStartedAtMs_ = 0;
+      } else if (nowMs - impactDetectedAtMs_ >
+                 AppConfig::FALL_EVALUATION_TIMEOUT_MS) {
+        fallState_ = FallState::kMonitoring;
+        stateStartedAtMs_ = nowMs;
+        fallCandidateStartedAtMs_ = 0;
+        impactDetectedAtMs_ = 0;
+        stillnessStartedAtMs_ = 0;
+      }
+      break;
+    }
+
     case FallState::kFallDetected:
+      fallCandidateStartedAtMs_ = 0;
+      impactDetectedAtMs_ = 0;
+      stillnessStartedAtMs_ = 0;
       if (nowMs - stateStartedAtMs_ > AppConfig::FALL_LATCH_MS) {
         fallState_ = FallState::kMonitoring;
         stateStartedAtMs_ = nowMs;
       }
       break;
   }
+}
+
+bool GyroComponent::isPostureInFallZone(float postureAngleDeg) const {
+  return postureAngleDeg >= fallPostureAngleThresholdDeg_ ||
+         postureAngleDeg <= fallPostureAngleThresholdDegInv_;
 }
 
 void GyroComponent::updateFallWindow() {
@@ -303,6 +480,10 @@ const char* GyroComponent::fallStateName() const {
   switch (fallState_) {
     case FallState::kMonitoring:
       return "monitoring";
+    case FallState::kCandidate:
+      return "candidate";
+    case FallState::kImpactDetected:
+      return "impact_detected";
     case FallState::kFallDetected:
       return "fall_detected";
   }

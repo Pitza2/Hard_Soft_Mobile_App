@@ -33,6 +33,7 @@ bool pulseAvailable = false;
 bool temperatureAvailable = false;
 bool fallAlarmArmed = true;
 bool fallDismissedForCurrentEvent = false;
+bool lastRawFallDetected = false;
 bool alertButtonLastReading = HIGH;
 bool alertButtonStableState = HIGH;
 uint32_t alertButtonLastDebounceMs = 0;
@@ -59,8 +60,7 @@ bool isBodyTemperatureEligibleForFallDetection() {
 }
 
 bool isRawFallDetectedForApp() {
-  return gyroAvailable && gyro.isFallDetected() &&
-         isBodyTemperatureEligibleForFallDetection();
+  return gyroAvailable && gyro.isFallDetected();
 }
 
 bool isFallDetectedForApp() {
@@ -174,8 +174,18 @@ void handleFallAlarm() {
   if (!rawFallDetected) {
     fallDismissedForCurrentEvent = false;
     fallAlarmArmed = true;
+    lastRawFallDetected = false;
     return;
   }
+
+  if (!lastRawFallDetected) {
+    fallDismissedForCurrentEvent = false;
+    fallAlarmArmed = true;
+    const String payload = buildSensorPacket();
+    bluetooth.sendMessage(payload);
+    Serial.println(payload);
+  }
+  lastRawFallDetected = true;
 
   if (fallDismissedForCurrentEvent) {
     return;
