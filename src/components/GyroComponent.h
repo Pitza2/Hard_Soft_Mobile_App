@@ -14,6 +14,7 @@ class GyroComponent : public Component {
   bool read(String& jsonPayload) override;
   bool update();
   bool isFallDetected() const;
+  float postureAngleDeg() const;
 
  private:
   enum class FallState : uint8_t {

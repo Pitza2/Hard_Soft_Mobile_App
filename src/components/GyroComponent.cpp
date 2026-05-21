@@ -23,6 +23,8 @@ bool GyroComponent::isFallDetected() const {
   return fallState_ == FallState::kFallDetected;
 }
 
+float GyroComponent::postureAngleDeg() const { return postureAngleDeg_; }
+
 bool GyroComponent::begin() {
   if (!mpu_.begin()) {
     Serial.println("Failed to find MPU6050 chip");

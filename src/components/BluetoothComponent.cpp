@@ -44,6 +44,24 @@ class RxCallbacksImpl : public BLECharacteristicCallbacks {
 
 const char* BluetoothComponent::name() const { return "bluetooth"; }
 
+bool BluetoothComponent::hasTimeSync() const { return hasTimeSync_; }
+
+void BluetoothComponent::getDisplayTime(uint8_t& hours, uint8_t& minutes) const {
+  if (!hasTimeSync_) {
+    hours = 0;
+    minutes = 0;
+    return;
+  }
+
+  const uint32_t elapsedSeconds = (millis() - timeSyncAtMs_) / 1000;
+  const uint32_t totalSeconds =
+      static_cast<uint32_t>(baseHours_) * 3600 +
+      static_cast<uint32_t>(baseMinutes_) * 60 +
+      static_cast<uint32_t>(baseSeconds_) + elapsedSeconds;
+  hours = (totalSeconds / 3600) % 24;
+  minutes = (totalSeconds / 60) % 60;
+}
+
 bool BluetoothComponent::begin() {
   BLEDevice::init(kDeviceName);
 
@@ -104,6 +122,7 @@ void BluetoothComponent::handleConnected() {
   deviceConnected_ = true;
   lastNotifyMs_ = millis();
   Serial.println("Phone connected");
+  sendMessage("{\"action\":\"time\"}");
 }
 
 void BluetoothComponent::handleDisconnected(BLEServer* server) {
@@ -121,6 +140,11 @@ void BluetoothComponent::handleReceived(const String& value) {
 
   Serial.print("Received from phone: ");
   Serial.println(value);
+
+  if (tryHandleTimeSync(value)) {
+    return;
+  }
+
   sendMessage(String("ESP received: ") + value);
 }
 
@@ -132,4 +156,55 @@ void BluetoothComponent::sendMessage(const String& message) {
   txCharacteristic_->setValue(message.c_str());
   txCharacteristic_->notify();
   ++messageCounter_;
+}
+
+bool BluetoothComponent::tryHandleTimeSync(const String& value) {
+  String timeValue = value;
+  timeValue.trim();
+
+  if (timeValue.startsWith("TIME:")) {
+    timeValue.remove(0, 5);
+  } else {
+    const int markerIndex = timeValue.indexOf("\"time\":\"");
+    if (markerIndex < 0) {
+      return false;
+    }
+    timeValue.remove(0, markerIndex + 8);
+    const int closingQuoteIndex = timeValue.indexOf('"');
+    if (closingQuoteIndex < 0) {
+      return false;
+    }
+    timeValue = timeValue.substring(0, closingQuoteIndex);
+  }
+
+  const int firstColonIndex = timeValue.indexOf(':');
+  if (firstColonIndex <= 0) {
+    return false;
+  }
+
+  const int secondColonIndex = timeValue.indexOf(':', firstColonIndex + 1);
+  const uint8_t hours =
+      static_cast<uint8_t>(timeValue.substring(0, firstColonIndex).toInt());
+  const uint8_t minutes = static_cast<uint8_t>(
+      timeValue.substring(firstColonIndex + 1,
+                          secondColonIndex >= 0 ? secondColonIndex
+                                                : timeValue.length())
+          .toInt());
+  const uint8_t seconds = static_cast<uint8_t>(
+      secondColonIndex >= 0
+          ? timeValue.substring(secondColonIndex + 1).toInt()
+          : 0);
+
+  if (hours > 23 || minutes > 59 || seconds > 59) {
+    return false;
+  }
+
+  baseHours_ = hours;
+  baseMinutes_ = minutes;
+  baseSeconds_ = seconds;
+  timeSyncAtMs_ = millis();
+  hasTimeSync_ = true;
+  Serial.printf("Time synced: %02u:%02u:%02u\n", baseHours_, baseMinutes_,
+                baseSeconds_);
+  return true;
 }
