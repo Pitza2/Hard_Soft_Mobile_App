@@ -6,6 +6,7 @@
 #include "components/BluetoothComponent.h"
 #include "components/GyroComponent.h"
 #include "components/PulseOximeterComponent.h"
+#include "components/SetupDisplayComponent.h"
 #include "components/TemperatureComponent.h"
 #include "config/AppConfig.h"
 
@@ -13,6 +14,7 @@ namespace {
 BluetoothComponent bluetooth;
 GyroComponent gyro;
 PulseOximeterComponent pulseOximeter;
+SetupDisplayComponent setupDisplay;
 TemperatureComponent temperature;
 
 constexpr int kGyroInterruptPin = 19;
@@ -86,11 +88,18 @@ void setup() {
     Serial.println("Temperature init failed");
   }
 
+  setupDisplay.setBluetoothComponent(&bluetooth);
+  setupDisplay.setGyroComponent(&gyro);
+  if (!setupDisplay.begin()) {
+    Serial.println("Setup display init failed");
+  }
+
   Serial.println("Sensor BLE streaming started");
 }
 
 void loop() {
   bluetooth.loop();
+  setupDisplay.loop();
 
   if (gyroAvailable) {
     if (gyro.sampleIfNeeded()) {

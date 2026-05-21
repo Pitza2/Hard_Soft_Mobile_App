@@ -1,44 +1,47 @@
 #include "components/BluetoothComponent.h"
 
-#include <BLESecurity.h>
-#include <BLE2902.h>
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-
-#include <string>
+#include <NimBLEDevice.h>
 
 namespace {
 constexpr char kDeviceName[] = "Timisoara 100";
 constexpr char kServiceUuid[] = "12345678-1234-1234-1234-123456789abc";
 constexpr char kRxCharUuid[] = "abcd1234-5678-90ab-cdef-123456789abc";
 constexpr char kTxCharUuid[] = "dcba4321-8765-09ba-fedc-987654321abc";
-constexpr char kPreferencesNamespace[] = "bluetooth";
-constexpr char kPasskeyPrefKey[] = "passkey";
 constexpr uint32_t kMinBlePasskey = 100000;
 constexpr uint32_t kMaxBlePasskey = 999999;
 
-class ServerCallbacksImpl : public BLEServerCallbacks {
+class ServerCallbacksImpl : public NimBLEServerCallbacks {
  public:
   explicit ServerCallbacksImpl(BluetoothComponent& owner) : owner_(owner) {}
 
-  void onConnect(BLEServer* server) override {
+  void onConnect(NimBLEServer* server,
+                 NimBLEConnInfo& connInfo) override {
     (void)server;
+    (void)connInfo;
     owner_.handleConnected();
   }
 
-  void onDisconnect(BLEServer* server) override {
+  void onDisconnect(NimBLEServer* server,
+                    NimBLEConnInfo& connInfo,
+                    int reason) override {
+    (void)connInfo;
+    (void)reason;
     owner_.handleDisconnected(server);
   }
+
+  uint32_t onPassKeyDisplay() override { return owner_.passkey(); }
 
  private:
   BluetoothComponent& owner_;
 };
 
-class RxCallbacksImpl : public BLECharacteristicCallbacks {
+class RxCallbacksImpl : public NimBLECharacteristicCallbacks {
  public:
   explicit RxCallbacksImpl(BluetoothComponent& owner) : owner_(owner) {}
 
-  void onWrite(BLECharacteristic* characteristic) override {
+  void onWrite(NimBLECharacteristic* characteristic,
+               NimBLEConnInfo& connInfo) override {
+    (void)connInfo;
     const std::string rawValue = characteristic->getValue();
     owner_.handleReceived(String(rawValue.c_str()));
   }
@@ -51,6 +54,8 @@ class RxCallbacksImpl : public BLECharacteristicCallbacks {
 const char* BluetoothComponent::name() const { return "bluetooth"; }
 
 bool BluetoothComponent::isConnected() const { return deviceConnected_; }
+
+bool BluetoothComponent::hasPing() const { return hasPing_; }
 
 uint32_t BluetoothComponent::passkey() const { return passkey_; }
 
@@ -73,70 +78,55 @@ void BluetoothComponent::getDisplayTime(uint8_t& hours, uint8_t& minutes) const 
 }
 
 bool BluetoothComponent::begin() {
-  BLEDevice::init(kDeviceName);
-  BLEDevice::setMTU(247);
-
-  preferences_.begin(kPreferencesNamespace, false);
-  passkey_ = preferences_.getULong(kPasskeyPrefKey, 0);
-  if (passkey_ < kMinBlePasskey || passkey_ > kMaxBlePasskey) {
-    passkey_ =
-        kMinBlePasskey + (static_cast<uint32_t>(esp_random()) %
-                          (kMaxBlePasskey - kMinBlePasskey + 1));
-    preferences_.putULong(kPasskeyPrefKey, passkey_);
-  }
-  preferences_.end();
+  passkey_ = kMinBlePasskey + (static_cast<uint32_t>(esp_random()) %
+                               (kMaxBlePasskey - kMinBlePasskey + 1));
 
   Serial.print("BLE passkey: ");
   Serial.println(passkey_);
 
-  BLESecurity* security = new BLESecurity();
-  security->setStaticPIN(passkey_);
-  security->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
-  security->setCapability(ESP_IO_CAP_OUT);
-  security->setKeySize(16);
-  security->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+  NimBLEDevice::init(kDeviceName);
+  NimBLEDevice::setMTU(247);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  NimBLEDevice::setSecurityAuth(true, true, true);
+  NimBLEDevice::setSecurityPasskey(passkey_);
+  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
 
-  server_ = BLEDevice::createServer();
+  server_ = NimBLEDevice::createServer();
   if (server_ == nullptr) {
     Serial.println("BLE server creation failed");
     return false;
   }
   server_->setCallbacks(new ServerCallbacksImpl(*this));
 
-  BLEService* service = server_->createService(kServiceUuid);
+  NimBLEService* service = server_->createService(kServiceUuid);
   if (service == nullptr) {
     Serial.println("BLE service creation failed");
     return false;
   }
 
   txCharacteristic_ = service->createCharacteristic(
-      kTxCharUuid, BLECharacteristic::PROPERTY_NOTIFY);
+      kTxCharUuid,
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY |
+          NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::READ_ENC);
   if (txCharacteristic_ == nullptr) {
     Serial.println("BLE TX characteristic creation failed");
     return false;
   }
-  txCharacteristic_->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM |
-                                          ESP_GATT_PERM_WRITE_ENC_MITM);
-  BLE2902* tx2902 = new BLE2902();
-  tx2902->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM |
-                               ESP_GATT_PERM_WRITE_ENC_MITM);
-  txCharacteristic_->addDescriptor(tx2902);
 
-  BLECharacteristic* rxCharacteristic = service->createCharacteristic(
-      kRxCharUuid, BLECharacteristic::PROPERTY_WRITE);
+  NimBLECharacteristic* rxCharacteristic = service->createCharacteristic(
+      kRxCharUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_AUTHEN |
+                       NIMBLE_PROPERTY::WRITE_ENC);
   if (rxCharacteristic == nullptr) {
     Serial.println("BLE RX characteristic creation failed");
     return false;
   }
-  rxCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM |
-                                         ESP_GATT_PERM_WRITE_ENC_MITM);
   rxCharacteristic->setCallbacks(new RxCallbacksImpl(*this));
 
   service->start();
 
-  BLEAdvertising* advertising = BLEDevice::getAdvertising();
+  NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
   advertising->addServiceUUID(kServiceUuid);
-  advertising->setScanResponse(true);
+  advertising->enableScanResponse(true);
   advertising->start();
 
   Serial.println("ESP32 BLE ready. Waiting for phone...");
@@ -158,13 +148,15 @@ void BluetoothComponent::loop() {
 
 void BluetoothComponent::handleConnected() {
   deviceConnected_ = true;
+  hasPing_ = false;
   lastNotifyMs_ = millis();
   Serial.println("Phone connected");
   sendMessage("{\"action\":\"time\"}");
 }
 
-void BluetoothComponent::handleDisconnected(BLEServer* server) {
+void BluetoothComponent::handleDisconnected(NimBLEServer* server) {
   deviceConnected_ = false;
+  hasPing_ = false;
   Serial.println("Phone disconnected");
   delay(500);
   server->startAdvertising();
@@ -178,6 +170,14 @@ void BluetoothComponent::handleReceived(const String& value) {
 
   Serial.print("Received from phone: ");
   Serial.println(value);
+
+  String trimmed = value;
+  trimmed.trim();
+  if (trimmed.equalsIgnoreCase("ping")) {
+    hasPing_ = true;
+    Serial.println("Phone handshake received");
+    return;
+  }
 
   if (tryHandleTimeSync(value)) {
     return;

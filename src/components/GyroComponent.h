@@ -57,6 +57,8 @@ class GyroComponent : public Component {
   float accelMagnitudeG_ = 0.0f;
   float gyroMagnitudeDps_ = 0.0f;
   float postureAngleDeg_ = 0.0f;
+  float rollDeg_ = 0.0f;
+  float pitchDeg_ = 0.0f;
   float fallPostureAngleThresholdDeg_ =
       90.0f + AppConfig::FALL_POSTURE_THRESHOLD_MARGIN_DEG;
   float fallPostureAngleThresholdDegInv_ =

@@ -133,6 +133,8 @@ bool GyroComponent::read(String& jsonPayload) {
                 ",\"accel_range_ms2\":" + String(accelRangeMs2_, 3) +
                 ",\"gyro_range_dps\":" + String(gyroRangeDps_, 1) +
                 ",\"posture_angle_deg\":" + String(postureAngleDeg_, 1) +
+                ",\"roll_deg\":" + String(rollDeg_, 1) +
+                ",\"pitch_deg\":" + String(pitchDeg_, 1) +
                 ",\"step_count\":" + String(stepCount_) +
                 ",\"fall_detected\":" +
                 String(fallState_ == FallState::kFallDetected ? "true"
@@ -196,6 +198,10 @@ void GyroComponent::updateFallState() {
     postureCos = kClampMax;
   }
   postureAngleDeg_ = acosf(postureCos) * kRadToDeg; // Convert cosine to an angle in radians and then to degrees
+  rollDeg_ = atan2f(accelY_, accelZ_) * kRadToDeg;
+  pitchDeg_ =
+      atan2f(-accelX_, sqrtf(accelY_ * accelY_ + accelZ_ * accelZ_)) *
+      kRadToDeg;
 
   updateFallWindow(nowMs);
   pruneFallWindow(nowMs);

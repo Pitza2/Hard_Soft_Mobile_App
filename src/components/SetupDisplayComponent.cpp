@@ -107,7 +107,7 @@ void SetupDisplayComponent::loop() {
 
     case UiState::kWaitForBluetooth:
       drawBluetoothWaitScreen();
-      if (bluetooth_ != nullptr && bluetooth_->isConnected()) {
+      if (bluetooth_ != nullptr && bluetooth_->hasPing()) {
         enterState(UiState::kPromptStand);
         drawPromptScreen("Setup", "Stand up straight", "Press button");
       }
@@ -248,7 +248,7 @@ void SetupDisplayComponent::drawWelcomeFrame() {
 void SetupDisplayComponent::drawBluetoothWaitScreen() {
   display_.clearDisplay();
   display_.setTextColor(SSD1306_WHITE);
-  drawCenteredText("Bluetooth", 4, 2);
+  drawCenteredText("BLE", 4, 2);
 
   String passkeyText = "PIN: ------";
   if (bluetooth_ != nullptr) {
@@ -259,8 +259,8 @@ void SetupDisplayComponent::drawBluetoothWaitScreen() {
   }
 
   drawCenteredText(passkeyText, 28, 1);
-  drawCenteredText("Connect phone", 42, 1);
-  drawCenteredText("to continue", 52, 1);
+  drawCenteredText("Connect + send", 42, 1);
+  drawCenteredText("ping", 52, 1);
   display_.display();
 }
 

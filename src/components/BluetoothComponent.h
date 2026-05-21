@@ -2,9 +2,8 @@
 
 #include <Arduino.h>
 
-#include <BLECharacteristic.h>
-#include <BLEServer.h>
-#include <Preferences.h>
+#include <NimBLECharacteristic.h>
+#include <NimBLEServer.h>
 
 #include "core/Component.h"
 
@@ -16,11 +15,12 @@ class BluetoothComponent : public Component {
   void loop();
 
   void handleConnected();
-  void handleDisconnected(BLEServer* server);
+  void handleDisconnected(NimBLEServer* server);
   void handleReceived(const String& value);
 
   void sendMessage(const String& message);
   bool isConnected() const;
+  bool hasPing() const;
   uint32_t passkey() const;
   bool hasTimeSync() const;
   void getDisplayTime(uint8_t& hours, uint8_t& minutes) const;
@@ -28,10 +28,10 @@ class BluetoothComponent : public Component {
  private:
   bool tryHandleTimeSync(const String& value);
 
-  BLEServer* server_ = nullptr;
-  BLECharacteristic* txCharacteristic_ = nullptr;
-  Preferences preferences_;
+  NimBLEServer* server_ = nullptr;
+  NimBLECharacteristic* txCharacteristic_ = nullptr;
   bool deviceConnected_ = false;
+  bool hasPing_ = false;
   uint32_t lastNotifyMs_ = 0;
   uint32_t messageCounter_ = 0;
   uint32_t passkey_ = 0;
