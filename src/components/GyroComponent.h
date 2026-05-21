@@ -5,6 +5,7 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
+#include "config/AppConfig.h"
 #include "core/Component.h"
 
 class GyroComponent : public Component {
@@ -16,6 +17,7 @@ class GyroComponent : public Component {
   bool sampleIfNeeded();
   bool isFallDetected() const;
   float postureAngleDeg() const;
+  uint32_t stepCount() const;
   void setInterruptPin(int interruptPin);
   bool usingInterrupts() const;
   void setCalibratedPostureMean(float meanAngleDeg);
@@ -55,8 +57,10 @@ class GyroComponent : public Component {
   float accelMagnitudeG_ = 0.0f;
   float gyroMagnitudeDps_ = 0.0f;
   float postureAngleDeg_ = 0.0f;
-  float fallPostureAngleThresholdDeg_ = 120.0f;
-  float fallPostureAngleThresholdDegInv_ = 45.0f;
+  float fallPostureAngleThresholdDeg_ =
+      90.0f + AppConfig::FALL_POSTURE_THRESHOLD_MARGIN_DEG;
+  float fallPostureAngleThresholdDegInv_ =
+      90.0f - AppConfig::FALL_POSTURE_THRESHOLD_MARGIN_DEG;
   float accelRangeMs2_ = 0.0f;
   float gyroRangeDps_ = 0.0f;
   float prevAccelXG_ = 0.0f;
@@ -74,7 +78,8 @@ class GyroComponent : public Component {
   bool stepPeakArmed_ = true;
 
   static volatile bool interruptFired_;
-  static constexpr uint32_t kFallWindowMs = 1000;
-  static constexpr size_t kFallWindowCapacity = 128;
+  static constexpr uint32_t kFallWindowMs = AppConfig::FALL_WINDOW_MS;
+  static constexpr size_t kFallWindowCapacity =
+      AppConfig::FALL_WINDOW_CAPACITY;
   WindowSample windowSamples_[kFallWindowCapacity] = {};
 };

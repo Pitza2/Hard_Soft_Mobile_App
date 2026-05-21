@@ -11,10 +11,6 @@ constexpr float kRadToDeg = 57.29578f;
 constexpr uint8_t kMpu6050Address = 0x68;
 constexpr uint8_t kMpu6050IntPinConfigRegister = 0x37;
 constexpr uint8_t kMpu6050IntEnableRegister = 0x38;
-constexpr float kFallAccelRangeThresholdMs2 = 5.5f;
-constexpr float kFallGyroRangeThresholdDps = 12.0f;
-constexpr uint32_t kFallLatchMs = 3000;
-constexpr float kMinSampleIntervalSeconds = 0.001f;
 constexpr float kClampMin = -1.0f;
 constexpr float kClampMax = 1.0f;
 }
@@ -29,6 +25,8 @@ bool GyroComponent::isFallDetected() const {
 
 float GyroComponent::postureAngleDeg() const { return postureAngleDeg_; }
 
+uint32_t GyroComponent::stepCount() const { return stepCount_; }
+
 void GyroComponent::setInterruptPin(int interruptPin) {
   interruptPin_ = interruptPin;
 }
@@ -36,8 +34,10 @@ void GyroComponent::setInterruptPin(int interruptPin) {
 bool GyroComponent::usingInterrupts() const { return interruptPin_ >= 0; }
 
 void GyroComponent::setCalibratedPostureMean(float meanAngleDeg) {
-  fallPostureAngleThresholdDeg_ = meanAngleDeg + 30.0f;
-  fallPostureAngleThresholdDegInv_ = meanAngleDeg - 30.0f;
+  fallPostureAngleThresholdDeg_ =
+      meanAngleDeg + AppConfig::FALL_POSTURE_THRESHOLD_MARGIN_DEG;
+  fallPostureAngleThresholdDegInv_ =
+      meanAngleDeg - AppConfig::FALL_POSTURE_THRESHOLD_MARGIN_DEG;
   Serial.printf("Posture thresholds set: upper=%.2f lower=%.2f\n",
                 fallPostureAngleThresholdDeg_,
                 fallPostureAngleThresholdDegInv_);
@@ -49,7 +49,7 @@ bool GyroComponent::begin() {
     return false;
   }
 
-  mpu_.setSampleRateDivisor(19);
+  mpu_.setSampleRateDivisor(AppConfig::MPU6050_SAMPLE_RATE_DIVISOR);
   mpu_.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu_.setGyroRange(MPU6050_RANGE_500_DEG);
   mpu_.setFilterBandwidth(MPU6050_BAND_21_HZ);
@@ -181,7 +181,7 @@ void GyroComponent::updateFallState() {
   if (hasSample_ && lastSampleAtMs_ != 0) {
     const float sampleIntervalSeconds =
         (nowMs - lastSampleAtMs_) / 1000.0f;
-    if (sampleIntervalSeconds >= kMinSampleIntervalSeconds) {
+    if (sampleIntervalSeconds >= AppConfig::GYRO_MIN_SAMPLE_INTERVAL_SECONDS) {
       const float jerkX = (accelXG - prevAccelXG_) / sampleIntervalSeconds;
       const float jerkY = (accelYG - prevAccelYG_) / sampleIntervalSeconds;
       const float jerkZ = (accelZG - prevAccelZG_) / sampleIntervalSeconds;
@@ -209,8 +209,8 @@ void GyroComponent::updateFallState() {
   switch (fallState_) {
     case FallState::kMonitoring:
       if (windowCount_ > 0 &&
-          accelRangeMs2_ >= kFallAccelRangeThresholdMs2 &&
-          gyroRangeDps_ >= kFallGyroRangeThresholdDps &&
+          accelRangeMs2_ >= AppConfig::FALL_ACCEL_RANGE_THRESHOLD_MS2 &&
+          gyroRangeDps_ >= AppConfig::FALL_GYRO_RANGE_THRESHOLD_DPS &&
           (postureAngleDeg_ >= fallPostureAngleThresholdDeg_ ||
            postureAngleDeg_ <= fallPostureAngleThresholdDegInv_)) {
         Serial.printf(
@@ -223,7 +223,7 @@ void GyroComponent::updateFallState() {
       break;
 
     case FallState::kFallDetected:
-      if (nowMs - stateStartedAtMs_ > kFallLatchMs) {
+      if (nowMs - stateStartedAtMs_ > AppConfig::FALL_LATCH_MS) {
         fallState_ = FallState::kMonitoring;
         stateStartedAtMs_ = nowMs;
       }
