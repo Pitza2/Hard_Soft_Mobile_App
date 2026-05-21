@@ -49,6 +49,16 @@ void GyroComponent::triggerFallDetected() {
   Serial.println("Manual fall trigger activated");
 }
 
+void GyroComponent::dismissFallDetected() {
+  if (fallState_ != FallState::kFallDetected) {
+    return;
+  }
+
+  fallState_ = FallState::kMonitoring;
+  stateStartedAtMs_ = millis();
+  Serial.println("Fall detection dismissed");
+}
+
 bool GyroComponent::begin() {
   if (!mpu_.begin()) {
     Serial.println("Failed to find MPU6050 chip");
@@ -209,8 +219,7 @@ void GyroComponent::updateFallState() {
       atan2f(-accelX_, sqrtf(accelY_ * accelY_ + accelZ_ * accelZ_)) *
       kRadToDeg;
 
-  updateFallWindow(nowMs);
-  pruneFallWindow(nowMs);
+  updateFallWindow();
   computeWindowRanges();
 
   prevAccelXG_ = accelXG;
@@ -220,11 +229,11 @@ void GyroComponent::updateFallState() {
 
   switch (fallState_) {
     case FallState::kMonitoring:
-      if (windowCount_ > 0 &&
+      if (windowCount_ >= kFallWindowCapacity &&
           accelRangeMs2_ >= AppConfig::FALL_ACCEL_RANGE_THRESHOLD_MS2 &&
           gyroRangeDps_ >= AppConfig::FALL_GYRO_RANGE_THRESHOLD_DPS &&
-          (postureAngleDeg_ >= fallPostureAngleThresholdDeg_ ||
-           postureAngleDeg_ <= fallPostureAngleThresholdDegInv_)) {
+          (postureAngleDeg_ >= 135 ||
+           postureAngleDeg_ <= 45)) {
         Serial.printf(
             "Fall detected: accel_range=%.2f m/s^2 gyro_range=%.2f dps "
             "posture=%.1f deg\n",
@@ -243,10 +252,10 @@ void GyroComponent::updateFallState() {
   }
 }
 
-void GyroComponent::updateFallWindow(uint32_t nowMs) {
+void GyroComponent::updateFallWindow() {
   const size_t insertIndex =
       (windowStartIndex_ + windowCount_) % kFallWindowCapacity;
-  windowSamples_[insertIndex] = {nowMs, accelMagnitudeG_, gyroMagnitudeDps_};
+  windowSamples_[insertIndex] = {0, accelMagnitudeG_, gyroMagnitudeDps_};
 
   if (windowCount_ < kFallWindowCapacity) {
     ++windowCount_;
@@ -254,18 +263,6 @@ void GyroComponent::updateFallWindow(uint32_t nowMs) {
   }
 
   windowStartIndex_ = (windowStartIndex_ + 1) % kFallWindowCapacity;
-}
-
-void GyroComponent::pruneFallWindow(uint32_t nowMs) {
-  while (windowCount_ > 0) {
-    const WindowSample& oldest = windowSamples_[windowStartIndex_];
-    if (nowMs - oldest.timestampMs <= kFallWindowMs) {
-      break;
-    }
-
-    windowStartIndex_ = (windowStartIndex_ + 1) % kFallWindowCapacity;
-    --windowCount_;
-  }
 }
 
 void GyroComponent::computeWindowRanges() {

@@ -22,6 +22,7 @@ class GyroComponent : public Component {
   bool usingInterrupts() const;
   void setCalibratedPostureMean(float meanAngleDeg);
   void triggerFallDetected();
+  void dismissFallDetected();
 
  private:
   struct WindowSample {
@@ -41,8 +42,7 @@ class GyroComponent : public Component {
   void updateStepCount(float accelMagnitudeG);
   void updateFallState();
   const char* fallStateName() const;
-  void updateFallWindow(uint32_t nowMs);
-  void pruneFallWindow(uint32_t nowMs);
+  void updateFallWindow();
   void computeWindowRanges();
 
   Adafruit_MPU6050 mpu_;
@@ -81,8 +81,7 @@ class GyroComponent : public Component {
   bool stepPeakArmed_ = true;
 
   static volatile bool interruptFired_;
-  static constexpr uint32_t kFallWindowMs = AppConfig::FALL_WINDOW_MS;
   static constexpr size_t kFallWindowCapacity =
-      AppConfig::FALL_WINDOW_CAPACITY;
+      AppConfig::FALL_WINDOW_SAMPLES;
   WindowSample windowSamples_[kFallWindowCapacity] = {};
 };

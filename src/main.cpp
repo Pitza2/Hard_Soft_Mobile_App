@@ -21,12 +21,12 @@ PulseOximeterComponent pulseOximeter;
 SetupDisplayComponent setupDisplay;
 TemperatureComponent temperature;
 
-constexpr int kGyroInterruptPin = 19;
 constexpr uint32_t kSensorSendIntervalMs = 1000;  // 1 sample per second
 constexpr uint32_t kGyroDebugPrintEverySamples = 20;
 constexpr uint32_t kFallLedBlinkIntervalMs = 150;
 
 uint32_t lastSensorSendMs = 0;
+uint32_t lastGyroPollMs = 0;
 uint32_t gyroSampleCounter = 0;
 bool gyroAvailable = false;
 bool pulseAvailable = false;
@@ -80,7 +80,6 @@ void beginComponents() {
   bluetooth.begin();
   buzzer.begin();
 
-  gyro.setInterruptPin(kGyroInterruptPin);
   gyroAvailable = gyro.begin();
   if (!gyroAvailable) {
     Serial.println("Gyro init failed");
@@ -189,6 +188,10 @@ void handleFallAlarm() {
 }
 
 void maybePrintGyroSample() {
+  if (!isFallDetectedForApp()) {
+    return;
+  }
+
   ++gyroSampleCounter;
   if (gyroSampleCounter % kGyroDebugPrintEverySamples != 0) {
     return;
@@ -206,7 +209,14 @@ void maybePrintGyroSample() {
 }
 
 void processGyroSample() {
-  if (!gyroAvailable || !gyro.sampleIfNeeded()) {
+  const uint32_t nowMs = millis();
+  if (!gyroAvailable ||
+      nowMs - lastGyroPollMs < AppConfig::GYRO_POLL_INTERVAL_MS) {
+    return;
+  }
+
+  lastGyroPollMs = nowMs;
+  if (!gyro.update()) {
     return;
   }
 
