@@ -54,8 +54,14 @@ bool isConfigurationComplete() {
   return setupDisplay.isConfigurationComplete();
 }
 
+bool isBodyTemperatureEligibleForFallDetection() {
+  return temperatureAvailable && !isnan(temperature.temperatureC()) &&
+         temperature.temperatureC() > 35.0f;
+}
+
 bool isRawFallDetectedForApp() {
-  return gyroAvailable && gyro.isFallDetected();
+  return gyroAvailable && gyro.isFallDetected() &&
+         isBodyTemperatureEligibleForFallDetection();
 }
 
 bool isFallDetectedForApp() {
