@@ -187,7 +187,15 @@ void BluetoothComponent::handleReceived(const String& value) {
 }
 
 void BluetoothComponent::sendMessage(const String& message) {
-  if (!deviceConnected_ || txCharacteristic_ == nullptr) {
+  if (!deviceConnected_) {
+    Serial.print("BLE send dropped, no device connected: ");
+    Serial.println(message);
+    return;
+  }
+
+  if (txCharacteristic_ == nullptr) {
+    Serial.print("BLE send dropped, TX characteristic unavailable: ");
+    Serial.println(message);
     return;
   }
 

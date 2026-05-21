@@ -389,6 +389,8 @@ void GyroComponent::updateFallState() {
           fallCandidateStartedAtMs_ = 0;
           impactDetectedAtMs_ = 0;
           stillnessStartedAtMs_ = 0;
+          // Stop evaluating impact recovery/timeout paths after latching a fall.
+          break;
         }
       } else {
         stillnessStartedAtMs_ = 0;
