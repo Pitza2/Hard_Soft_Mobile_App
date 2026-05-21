@@ -1,5 +1,6 @@
 #include "components/BluetoothComponent.h"
 
+#include <BLESecurity.h>
 #include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
@@ -11,6 +12,11 @@ constexpr char kDeviceName[] = "Timisoara 100";
 constexpr char kServiceUuid[] = "12345678-1234-1234-1234-123456789abc";
 constexpr char kRxCharUuid[] = "abcd1234-5678-90ab-cdef-123456789abc";
 constexpr char kTxCharUuid[] = "dcba4321-8765-09ba-fedc-987654321abc";
+constexpr char kPreferencesNamespace[] = "bluetooth";
+constexpr char kPasskeyPrefKey[] = "passkey";
+constexpr uint32_t kMinBlePasskey = 100000;
+constexpr uint32_t kMaxBlePasskey = 999999;
+
 class ServerCallbacksImpl : public BLEServerCallbacks {
  public:
   explicit ServerCallbacksImpl(BluetoothComponent& owner) : owner_(owner) {}
@@ -44,6 +50,10 @@ class RxCallbacksImpl : public BLECharacteristicCallbacks {
 
 const char* BluetoothComponent::name() const { return "bluetooth"; }
 
+bool BluetoothComponent::isConnected() const { return deviceConnected_; }
+
+uint32_t BluetoothComponent::passkey() const { return passkey_; }
+
 bool BluetoothComponent::hasTimeSync() const { return hasTimeSync_; }
 
 void BluetoothComponent::getDisplayTime(uint8_t& hours, uint8_t& minutes) const {
@@ -66,6 +76,26 @@ bool BluetoothComponent::begin() {
   BLEDevice::init(kDeviceName);
   BLEDevice::setMTU(247);
 
+  preferences_.begin(kPreferencesNamespace, false);
+  passkey_ = preferences_.getULong(kPasskeyPrefKey, 0);
+  if (passkey_ < kMinBlePasskey || passkey_ > kMaxBlePasskey) {
+    passkey_ =
+        kMinBlePasskey + (static_cast<uint32_t>(esp_random()) %
+                          (kMaxBlePasskey - kMinBlePasskey + 1));
+    preferences_.putULong(kPasskeyPrefKey, passkey_);
+  }
+  preferences_.end();
+
+  Serial.print("BLE passkey: ");
+  Serial.println(passkey_);
+
+  BLESecurity* security = new BLESecurity();
+  security->setStaticPIN(passkey_);
+  security->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+  security->setCapability(ESP_IO_CAP_OUT);
+  security->setKeySize(16);
+  security->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+
   server_ = BLEDevice::createServer();
   if (server_ == nullptr) {
     Serial.println("BLE server creation failed");
@@ -85,7 +115,12 @@ bool BluetoothComponent::begin() {
     Serial.println("BLE TX characteristic creation failed");
     return false;
   }
-  txCharacteristic_->addDescriptor(new BLE2902());
+  txCharacteristic_->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM |
+                                          ESP_GATT_PERM_WRITE_ENC_MITM);
+  BLE2902* tx2902 = new BLE2902();
+  tx2902->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM |
+                               ESP_GATT_PERM_WRITE_ENC_MITM);
+  txCharacteristic_->addDescriptor(tx2902);
 
   BLECharacteristic* rxCharacteristic = service->createCharacteristic(
       kRxCharUuid, BLECharacteristic::PROPERTY_WRITE);
@@ -93,6 +128,8 @@ bool BluetoothComponent::begin() {
     Serial.println("BLE RX characteristic creation failed");
     return false;
   }
+  rxCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM |
+                                         ESP_GATT_PERM_WRITE_ENC_MITM);
   rxCharacteristic->setCallbacks(new RxCallbacksImpl(*this));
 
   service->start();

@@ -100,6 +100,14 @@ void SetupDisplayComponent::loop() {
     case UiState::kWelcome:
       drawWelcomeFrame();
       if (millis() - stateStartedAtMs_ >= kWelcomeDurationMs) {
+        enterState(UiState::kWaitForBluetooth);
+        drawBluetoothWaitScreen();
+      }
+      break;
+
+    case UiState::kWaitForBluetooth:
+      drawBluetoothWaitScreen();
+      if (bluetooth_ != nullptr && bluetooth_->isConnected()) {
         enterState(UiState::kPromptStand);
         drawPromptScreen("Setup", "Stand up straight", "Press button");
       }
@@ -237,6 +245,25 @@ void SetupDisplayComponent::drawWelcomeFrame() {
   display_.display();
 }
 
+void SetupDisplayComponent::drawBluetoothWaitScreen() {
+  display_.clearDisplay();
+  display_.setTextColor(SSD1306_WHITE);
+  drawCenteredText("Bluetooth", 4, 2);
+
+  String passkeyText = "PIN: ------";
+  if (bluetooth_ != nullptr) {
+    char buffer[20];
+    snprintf(buffer, sizeof(buffer), "PIN: %06lu",
+             static_cast<unsigned long>(bluetooth_->passkey()));
+    passkeyText = String(buffer);
+  }
+
+  drawCenteredText(passkeyText, 28, 1);
+  drawCenteredText("Connect phone", 42, 1);
+  drawCenteredText("to continue", 52, 1);
+  display_.display();
+}
+
 void SetupDisplayComponent::drawPromptScreen(const String& title,
                                              const String& line1,
                                              const String& line2) {
@@ -359,6 +386,8 @@ const char* SetupDisplayComponent::stateName() const {
   switch (uiState_) {
     case UiState::kWelcome:
       return "welcome";
+    case UiState::kWaitForBluetooth:
+      return "wait_for_bluetooth";
     case UiState::kPromptStand:
       return "prompt_stand";
     case UiState::kCountdownToSeat:

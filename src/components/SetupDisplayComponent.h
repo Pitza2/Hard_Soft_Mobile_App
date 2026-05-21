@@ -29,6 +29,7 @@ class SetupDisplayComponent : public Component {
 
   enum class UiState : uint8_t {
     kWelcome,
+    kWaitForBluetooth,
     kPromptStand,
     kCountdownToSeat,
     kPromptSeat,
@@ -40,6 +41,7 @@ class SetupDisplayComponent : public Component {
 
   void drawCenteredText(const String& text, int16_t y, uint8_t size);
   void drawWelcomeFrame();
+  void drawBluetoothWaitScreen();
   void drawPromptScreen(const String& title, const String& line1,
                         const String& line2);
   void drawCountdownScreen(uint32_t remainingMs);
