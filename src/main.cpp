@@ -32,6 +32,7 @@ bool gyroAvailable = false;
 bool pulseAvailable = false;
 bool temperatureAvailable = false;
 bool fallAlarmArmed = true;
+bool fallDismissedForCurrentEvent = false;
 bool alertButtonLastReading = HIGH;
 bool alertButtonStableState = HIGH;
 uint32_t alertButtonLastDebounceMs = 0;
@@ -57,9 +58,13 @@ bool isBodyTemperatureEligibleForFallDetection() {
          temperature.temperatureC() > 35.0f;
 }
 
-bool isFallDetectedForApp() {
+bool isRawFallDetectedForApp() {
   return gyroAvailable && gyro.isFallDetected() &&
          isBodyTemperatureEligibleForFallDetection();
+}
+
+bool isFallDetectedForApp() {
+  return isRawFallDetectedForApp() && !fallDismissedForCurrentEvent;
 }
 
 void beginInfrastructure() {
@@ -154,16 +159,32 @@ String buildSensorPacket() {
          ",\"steps\":" + String(steps) + ",\"temp\":" + String(tempC, 1) + "}";
 }
 
-void handleFallAlarm() {
-  const bool fallDetected = isFallDetectedForApp();
-  if (fallDetected && fallAlarmArmed && !buzzer.isActive()) {
-    buzzer.startAlarm();
-    fallAlarmArmed = false;
+void sendDismissFallEventIfNeeded() {
+  if (!buzzer.consumeStoppedByUserEvent()) {
     return;
   }
 
-  if (!fallDetected) {
+  fallDismissedForCurrentEvent = true;
+  const String payload = "{\"action\":\"dismiss_fall\"}";
+  bluetooth.sendMessage(payload);
+  Serial.println(payload);
+}
+
+void handleFallAlarm() {
+  const bool rawFallDetected = isRawFallDetectedForApp();
+  if (!rawFallDetected) {
+    fallDismissedForCurrentEvent = false;
     fallAlarmArmed = true;
+    return;
+  }
+
+  if (fallDismissedForCurrentEvent) {
+    return;
+  }
+
+  if (fallAlarmArmed && !buzzer.isActive()) {
+    buzzer.startAlarm();
+    fallAlarmArmed = false;
   }
 }
 
@@ -250,6 +271,7 @@ void setup() {
 void loop() {
   bluetooth.loop();
   buzzer.loop();
+  sendDismissFallEventIfNeeded();
   setupDisplay.setInputEnabled(!buzzer.isActive());
   setupDisplay.loop();
   processManualFallTrigger();

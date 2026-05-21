@@ -13,6 +13,7 @@ class BuzzerComponent : public Component {
   void startAlarm();
   void stop();
   bool isActive() const;
+  bool consumeStoppedByUserEvent();
 
  private:
   void playBoth(int frequency);
@@ -20,6 +21,7 @@ class BuzzerComponent : public Component {
   bool wasStopButtonPressed();
 
   bool active_ = false;
+  bool stoppedByUser_ = false;
   uint32_t lastStepAtMs_ = 0;
   int phase_ = 0;
   int frequencyHz_ = 0;

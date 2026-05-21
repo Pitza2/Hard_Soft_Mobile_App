@@ -18,12 +18,15 @@ bool BuzzerComponent::begin() {
 
 bool BuzzerComponent::read(String& jsonPayload) {
   jsonPayload = String("{\"active\":") + (active_ ? "true" : "false") +
-                ",\"frequency_hz\":" + String(frequencyHz_) + "}";
+                ",\"frequency_hz\":" + String(frequencyHz_) +
+                ",\"stopped_by_user\":" +
+                (stoppedByUser_ ? "true" : "false") + "}";
   return true;
 }
 
 void BuzzerComponent::loop() {
   if (active_ && wasStopButtonPressed()) {
+    stoppedByUser_ = true;
     stop();
     Serial.println("Fall alarm stopped");
     return;
@@ -83,6 +86,7 @@ void BuzzerComponent::loop() {
 
 void BuzzerComponent::startAlarm() {
   active_ = true;
+  stoppedByUser_ = false;
   lastStepAtMs_ = millis();
   phase_ = 0;
   frequencyHz_ = AppConfig::BUZZER_BASE_FREQUENCY_HZ;
@@ -100,6 +104,12 @@ void BuzzerComponent::stop() {
 }
 
 bool BuzzerComponent::isActive() const { return active_; }
+
+bool BuzzerComponent::consumeStoppedByUserEvent() {
+  const bool stoppedByUser = stoppedByUser_;
+  stoppedByUser_ = false;
+  return stoppedByUser;
+}
 
 void BuzzerComponent::playBoth(int frequency) {
   frequencyHz_ = frequency;

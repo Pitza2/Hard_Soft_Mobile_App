@@ -43,19 +43,13 @@ bool SetupDisplayComponent::begin() {
     return false;
   }
 
-  calibrationLoaded_ = loadCalibration();
-  if (calibrationLoaded_ && gyro_ != nullptr) {
-    gyro_->setCalibratedPostureMean(overallMeanAngleDeg_);
-  }
-  if (calibrationLoaded_) {
-    enterState(UiState::kDone);
-    watchStartedAtMs_ = millis();
-    doneScreen_ = DoneScreen::kWatch;
-    drawWatchScreen();
-  } else {
-    enterState(UiState::kWelcome);
-    drawWelcomeFrame();
-  }
+  calibrationLoaded_ = false;
+  standingMeanAngleDeg_ = NAN;
+  seatedMeanAngleDeg_ = NAN;
+  walkingMeanAngleDeg_ = NAN;
+  overallMeanAngleDeg_ = NAN;
+  enterState(UiState::kWelcome);
+  drawWelcomeFrame();
   initialized_ = true;
   return true;
 }

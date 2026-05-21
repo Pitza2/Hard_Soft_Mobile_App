@@ -202,7 +202,7 @@ bool BluetoothComponent::tryHandleTimeSync(const String& value) {
 
   if (timeValue.startsWith("TIME:")) {
     timeValue.remove(0, 5);
-  } else {
+  } else if (timeValue.startsWith("{")) {
     const int markerIndex = timeValue.indexOf("\"time\":\"");
     if (markerIndex < 0) {
       return false;
